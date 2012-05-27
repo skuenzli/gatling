@@ -38,8 +38,8 @@ import java.util.List;
 
 import static com.excilys.ebi.gatling.ant.GatlingTask.GATLING_CLASSPATH_REF_NAME;
 import static java.util.Arrays.asList;
-import static org.codehaus.plexus.util.StringUtils.chompLast;
 import static org.codehaus.plexus.util.StringUtils.join;
+import static org.codehaus.plexus.util.StringUtils.trim;
 
 /**
  * Mojo to execute Gatling.
@@ -262,8 +262,15 @@ public class GatlingMojo extends AbstractMojo {
 		}
 	}
 
-	protected String fileNametoClassName(String fileName) {
-		return chompLast(fileName).replace(File.separatorChar, '.');
+	protected String fileNameToClassName(String fileName) {
+        String trimmedFileName = trim(fileName);
+
+        int lastIndexOfExtensionDelim = trimmedFileName.lastIndexOf(".");
+        String strippedFileName = lastIndexOfExtensionDelim > 0 ?
+                trimmedFileName.substring(0, lastIndexOfExtensionDelim) :
+                trimmedFileName;
+
+        return strippedFileName.replace(File.separatorChar, '.');
 	}
 
 	/**
@@ -298,7 +305,7 @@ public class GatlingMojo extends AbstractMojo {
 
 		List<String> includedClassNames = new ArrayList<String>(includedFiles.length);
 		for (String includedFile : includedFiles) {
-			includedClassNames.add(fileNametoClassName(includedFile));
+			includedClassNames.add(fileNameToClassName(includedFile));
 		}
 
 		getLog().debug("resolved simulation classes: " + includedClassNames);
