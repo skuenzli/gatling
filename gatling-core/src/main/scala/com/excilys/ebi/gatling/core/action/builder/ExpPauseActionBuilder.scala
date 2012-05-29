@@ -21,20 +21,24 @@ import java.util.concurrent.TimeUnit
 import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
 
 import akka.actor.{Props, ActorRef}
-import com.excilys.ebi.gatling.core.action.{ExpPauseAction, system}
+import com.excilys.ebi.gatling.core.action.{PauseAction, system}
+import com.excilys.ebi.gatling.core.util.NumberHelper._
 
 
 object ExpPauseActionBuilder {
 
 	/**
-	 * Creates an initialized ExpPauseActionBuilder no delay and a time unit in Seconds.
+	 * Creates an initialized ExpPauseActionBuilder with a 1 second delay and a
+     * time unit in Seconds.  A 1 second delay is used because exponential distributions
+     * are not defined at zero and 1 is the smallest positive Long.
 	 */
-	def expPauseActionBuilder = new ExpPauseActionBuilder(0, TimeUnit.SECONDS, null)
+	def expPauseActionBuilder = new ExpPauseActionBuilder(1, TimeUnit.SECONDS, null)
 }
 
 
 /**
- * Builder for ExpPauseAction
+ * Builder for the 'pauseExp' action.  Creates PauseActions for a user with a delay coming from
+ * an exponential distribution with the specified average duration.
  *
  * @constructor create a new ExpPauseActionBuilder
  * @param averageDuration average duration of the generated pause
@@ -61,5 +65,10 @@ class ExpPauseActionBuilder(averageDuration: Long, timeUnit: TimeUnit, next: Act
 
   def withNext(next: ActorRef) = new ExpPauseActionBuilder(averageDuration, timeUnit, next)
 
-  def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry) = system.actorOf(Props(new ExpPauseAction(next, averageDuration, timeUnit)))
+  def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry) = {
+    val averageDurationInMillis = TimeUnit.MILLISECONDS.convert(averageDuration, timeUnit)
+    val delayGenerator: () => Long = createExpRandomLongGenerator(averageDurationInMillis)
+
+    system.actorOf(Props(new PauseAction(next, delayGenerator)))
+  }
 }

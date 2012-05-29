@@ -28,30 +28,36 @@ object NumberHelper {
   val RANDOM = new Random
 
   /**
-   * Get a random long from a uniform distribution between the values min and max.
+   * Create a function that generates uniformly-distributed random longs between the values min and max.
    * @param min is the minimum value of the uniform distribution
    * @param max is the maximum value of the uniform distribution
    * @return
    */
-  def getRandomLong(min: Long, max: Long): Long = round(min.toDouble + (RANDOM.nextDouble * (max - min).toDouble))
+  def createUniformRandomLongGenerator(min: Long, max: Long): () => Long = {
+    () => round(min.toDouble + (RANDOM.nextDouble * (max - min).toDouble))
+  }
 
   /**
-   * Get a random double from an exponential distribution with the specified average value.
+   * Create a function that generates exponentially-distributed random doubles with the provided average.
    *
-   * @param avg is the desired average value of the exponential distribution
+   * @param avg is the desired average of the exponential distribution
    * @return
-   * @see http://perfdynamics.blogspot.com/2012/03/how-to-generate-exponential-delays.html#more
    */
-  def getRandomDoubleFromExp(avg: Double): Double = new ExponentialDistribution(avg).sample()
+  def createExpRandomDoubleGenerator(avg: Double): () => Double = {
+    val dist: ExponentialDistribution = new ExponentialDistribution(avg)
+    () => dist.sample()
+  }
 
   /**
-   * Get a random long from an exponential distribution with the specified average value.
+   * Create a function that generates exponentially-distributed random longs with the provided average.
    *
-   * @param avg is the desired average value of the exponential distribution
+   * @param avg is the desired average of the exponential distribution
    * @return
-   * @see http://perfdynamics.blogspot.com/2012/03/how-to-generate-exponential-delays.html#more
    */
-  def getRandomLongFromExp(avg: Double): Long = round(getRandomDoubleFromExp(avg))
+  def createExpRandomLongGenerator(avg: Double): () => Long = {
+    val generator = createExpRandomDoubleGenerator(avg)
+    () => round(generator())
+  }
 
   def isNumeric(string: String) = string.forall(_.isDigit)
 }

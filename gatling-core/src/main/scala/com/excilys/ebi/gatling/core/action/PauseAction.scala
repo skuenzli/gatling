@@ -24,20 +24,12 @@ import akka.actor.ActorRef
 
 /**
  * PauseAction provides a convenient means to implement pause actions based on random distributions.
+ *
+ * @param next the next action to execute, which will be notified after the pause is complete
+ * @param generateDelayInMillis a function that can be used to generate a delays for the pause action
  */
-trait PauseAction extends Action with Logging {
-
-  /**
-   * Generate the delay to be used for the action, in milliseconds.
-   * @return
-   */
-  def generateDelayInMillis:Long
-
-  /**
-   * Get the next action to execute, which will be notified after the pause is complete.
-   * @return
-   */
-  def next: ActorRef
+class PauseAction(next: ActorRef, generateDelayInMillis:() => Long)
+  extends Action with Logging {
 
   /**
    * Generates a duration if required or use the one given and defer
@@ -47,7 +39,7 @@ trait PauseAction extends Action with Logging {
    */
   def execute(session: Session) {
 
-    val durationInMillis = generateDelayInMillis
+    val durationInMillis:Long = generateDelayInMillis()
     val timeShift = session.getTimeShift
 
     if (durationInMillis > timeShift) {

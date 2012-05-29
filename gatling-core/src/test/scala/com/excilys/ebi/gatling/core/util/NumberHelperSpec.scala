@@ -32,11 +32,12 @@ class NumberHelperSpec extends Specification {
   "getRandomLong" should {
 
     "be zero when min and max are zero" in {
-      NumberHelper.getRandomLong(0, 0) must beEqualTo(0)
+      NumberHelper.createUniformRandomLongGenerator(0, 0)() must beEqualTo(0)
     }
 
     "produce uniformly-distributed random numbers within the specified range" in {
-      val min:Int = 0; val max:Int = 100;
+      val min:Int = 0
+      val max:Int = 100
       val expectedAverage:Double = (max + min) / 2
       val numSamples: Int = 1000
       val numTests = 100
@@ -47,9 +48,11 @@ class NumberHelperSpec extends Specification {
       for (n <- 0 until numTests) {
         var samples = List[Double]()
 
+        val uniformRandomLongGenerator = NumberHelper.createUniformRandomLongGenerator(min, max)
+
         for (i <- 0 until numSamples) {
-          val uniformSample: Long = NumberHelper.getRandomLong(min, max)
-          samples ::= uniformSample
+          val uniformSample: Long = uniformRandomLongGenerator()
+          samples ::= uniformRandomLongGenerator()
 
           uniformSample must beGreaterThanOrEqualTo(min.toLong)
           uniformSample must beLessThanOrEqualTo(max.toLong)
@@ -79,7 +82,7 @@ class NumberHelperSpec extends Specification {
   "getRandomDoubleFromExponential" should {
 
     "throw exception when expected average is zero" in {
-      NumberHelper.getRandomDoubleFromExp(0) should throwA[NotStrictlyPositiveException]
+      NumberHelper.createExpRandomDoubleGenerator(0) should throwA[NotStrictlyPositiveException]
     }
 
     "produce exponentially-distributed random doubles around the specified average" in {
@@ -93,9 +96,9 @@ class NumberHelperSpec extends Specification {
       for (n <- 0 until numTests) {
         var samples = List[Double]()
 
+        val expRandomDoubleGenerator = NumberHelper.createExpRandomDoubleGenerator(expectedAverage)
         for (i <- 0 until numSamples) {
-          val exponentialSample: Double = NumberHelper.getRandomDoubleFromExp(expectedAverage)
-          samples ::= exponentialSample
+          samples ::= expRandomDoubleGenerator()
         }
 
         val samplesArray: Array[Double] = samples.toArray
@@ -121,7 +124,7 @@ class NumberHelperSpec extends Specification {
   "getRandomLongFromExponential" should {
 
     "throw exception when expected average is zero" in {
-      NumberHelper.getRandomLongFromExp(0) should throwA[NotStrictlyPositiveException]
+      NumberHelper.createExpRandomLongGenerator(0) should throwA[NotStrictlyPositiveException]
     }
 
     "produce exponentially-distributed random longs around the specified average" in {
@@ -135,9 +138,9 @@ class NumberHelperSpec extends Specification {
       for (n <- 0 until numTests) {
         var samples = List[Double]()
 
+        val expRandomLongGenerator = NumberHelper.createExpRandomLongGenerator(expectedAverage)
         for (i <- 0 until numSamples) {
-          val exponentialSample: Long = NumberHelper.getRandomLongFromExp(expectedAverage)
-          samples ::= exponentialSample
+          samples ::= expRandomLongGenerator()
         }
 
         val samplesArray: Array[Double] = samples.toArray
