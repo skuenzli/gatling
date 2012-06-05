@@ -15,115 +15,118 @@
  */
 package com.excilys.ebi.gatling.charts.report
 
-import com.excilys.ebi.gatling.charts.component.ComponentLibrary
-import com.excilys.ebi.gatling.charts.config.ChartsFiles._
+import com.excilys.ebi.gatling.charts.component.{ StatisticsTextComponent, Statistics, ComponentLibrary }
+import com.excilys.ebi.gatling.charts.config.ChartsFiles.globalFile
 import com.excilys.ebi.gatling.charts.series.Series
-import com.excilys.ebi.gatling.charts.template.ActiveSessionsPageTemplate
-import com.excilys.ebi.gatling.charts.util.Colors.{ toString, YELLOW, RED, PURPLE, PINK, LIME, LIGHT_RED, LIGHT_PURPLE, LIGHT_PINK, LIGHT_ORANGE, LIGHT_LIME, LIGHT_BLUE, GREEN, CYAN, BLUE }
-import com.excilys.ebi.gatling.charts.util.StatisticsHelper.numberOfActiveSessionsPerSecond
-import com.excilys.ebi.gatling.core.result.reader.DataReader
 import com.excilys.ebi.gatling.charts.template.GlobalPageTemplate
-import com.excilys.ebi.gatling.charts.util.StatisticsHelper._
-import com.excilys.ebi.gatling.core.result.message.RequestStatus.{ OK, KO }
-import com.excilys.ebi.gatling.charts.util.Colors.{ toString, YELLOW, TRANSLUCID_RED, TRANSLUCID_BLUE, RED, ORANGE, GREEN, BLUE }
+import com.excilys.ebi.gatling.charts.util.Colors.{ toString, YELLOW, RED, PURPLE, PINK, ORANGE, LIME, LIGHT_RED, LIGHT_PURPLE, LIGHT_PINK, LIGHT_ORANGE, LIGHT_LIME, LIGHT_BLUE, GREEN, CYAN, BLUE }
+import com.excilys.ebi.gatling.charts.util.StatisticsHelper.count
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
-import com.excilys.ebi.gatling.charts.component.Statistics
+import com.excilys.ebi.gatling.core.result.message.RequestStatus.{ OK, KO }
+import com.excilys.ebi.gatling.core.result.reader.{ DataReader, ChartRequestRecord }
 import com.excilys.ebi.gatling.core.util.StringHelper.EMPTY
-import com.excilys.ebi.gatling.charts.component.StatisticsTextComponent
 
 class GlobalReportGenerator(runOn: String, dataReader: DataReader, componentLibrary: ComponentLibrary) extends ReportGenerator(runOn, dataReader, componentLibrary) {
 
 	def generate {
+		val totalCount = dataReader.countRequests()
+		val okCount = dataReader.countRequests(Some(OK))
+		val koCount = totalCount - okCount
+		val globalMinResponseTime = dataReader.minResponseTime()
+		val globalMaxResponseTime = dataReader.maxResponseTime()
+		val okMinResponseTime = dataReader.minResponseTime(Some(OK))
+		val okMaxResponseTime = dataReader.maxResponseTime(Some(OK))
+		val koMinResponseTime = dataReader.minResponseTime(Some(KO))
+		val koMaxResponseTime = dataReader.maxResponseTime(Some(KO))
 
-		// Active Sessions Series
-		val activeSessionsSeries = {
-			val activeSessionsData = dataReader
+		def activeSessionsChartComponent = {
+			val activeSessionsSeries = dataReader
 				.scenarioNames
-				.map { scenarioName => (scenarioName, dataReader.scenarioRequestRecordsGroupByExecutionStartDateInSeconds(scenarioName)) }
-				.map { case (scenarioName, scenarioData) => scenarioName -> numberOfActiveSessionsPerSecond(scenarioData) }
+				.map { scenarioName => scenarioName -> dataReader.numberOfActiveSessionsPerSecond(Some(scenarioName)) }
 				.reverse
-
-			activeSessionsData
 				.zip(List(BLUE, GREEN, RED, YELLOW, CYAN, LIME, PURPLE, PINK, LIGHT_BLUE, LIGHT_ORANGE, LIGHT_RED, LIGHT_LIME, LIGHT_PURPLE, LIGHT_PINK))
-				.map {
-					case ((scenarioName, data), color) => new Series[Long, Int](scenarioName, data, List(color))
-				}
+				.map { case ((scenarioName, data), color) => new Series[Long, Int](scenarioName, data, List(color)) }
+
+			componentLibrary.getActiveSessionsChartComponent(activeSessionsSeries)
 		}
-		
-		// Requests Series
-		val requestsData = dataReader.realRequestRecordsGroupByExecutionStartDateInSeconds
-		val succeededRequestsData = numberOfRequestsPerSecond(requestsData, OK)
-		val failedRequestsData = numberOfRequestsPerSecond(requestsData, KO)
-				
-		val allRequestsSeries = new Series[Long, Int]("All requests", numberOfRequestsPerSecondAsList(requestsData), List(BLUE))
-		val failedRequestsSeries = new Series[Long, Int]("Failed requests", failedRequestsData, List(RED))
-		val succeededRequestsSeries = new Series[Long, Int]("Succeeded requests", succeededRequestsData, List(GREEN))
-		val pieRequestsSeries = new Series[String, Int]("Repartition", ("Success", count(succeededRequestsData)) :: ("Failures", count(failedRequestsData)) :: Nil, List(GREEN, RED))
 
-		// Transactions Series
-		val transactionsData = dataReader.realRequestRecordsGroupByExecutionEndDateInSeconds
-		val failedTransactionsData = numberOfRequestsPerSecond(transactionsData, KO)
-		val succeededTransactionsData = numberOfRequestsPerSecond(transactionsData, OK)
+		def requestsChartComponent = {
+			val all = dataReader.numberOfEventsPerSecond((record: ChartRequestRecord) => record.executionStartDateNoMillis).toSeq.sortBy(_._1)
+			val oks = dataReader.numberOfEventsPerSecond((record: ChartRequestRecord) => record.executionStartDateNoMillis, Some(OK)).toSeq.sortBy(_._1)
+			val kos = dataReader.numberOfEventsPerSecond((record: ChartRequestRecord) => record.executionStartDateNoMillis, Some(KO)).toSeq.sortBy(_._1)
 
-		val allTransactions = new Series[Long, Int]("All requests", numberOfRequestsPerSecondAsList(transactionsData), List(BLUE))
-		val failedTransactions = new Series[Long, Int]("Failed requests", failedTransactionsData, List(RED))
-		val succeededTransactions = new Series[Long, Int]("Succeeded requests", succeededTransactionsData, List(GREEN))
-		val pieTransactionsSeries = new Series[String, Int]("Repartition", ("Success", count(succeededTransactionsData)) :: ("Failures", count(failedTransactionsData)) :: Nil, List(GREEN, RED))
-		
-		// Statistics
-		val requests = dataReader.realRequestRecords
-		val successRequests = requests.filter(_.requestStatus == OK)
-		val failedRequests = requests.filter(_.requestStatus != OK)
+			val allSeries = new Series[Long, Int]("All requests", all, List(BLUE))
+			val kosSeries = new Series[Long, Int]("Failed requests", kos, List(RED))
+			val oksSeries = new Series[Long, Int]("Succeeded requests", oks, List(GREEN))
+			val pieRequestsSeries = new Series[String, Int]("Distribution", ("Success", count(oks)) :: ("Failures", count(kos)) :: Nil, List(GREEN, RED))
 
-		val numberOfRequests = requests.length
-		val numberOfSuccessfulRequests = successRequests.length
-		val numberOfFailedRequests = numberOfRequests - numberOfSuccessfulRequests
+			componentLibrary.getRequestsChartComponent(allSeries, kosSeries, oksSeries, pieRequestsSeries)
+		}
 
-		val globalMinResponseTime = minResponseTime(requests)
-		val globalMaxResponseTime = maxResponseTime(requests)
+		def transactionsChartComponent = {
+			val all = dataReader.numberOfEventsPerSecond((record: ChartRequestRecord) => record.executionEndDateNoMillis).toSeq.sortBy(_._1)
+			val oks = dataReader.numberOfEventsPerSecond((record: ChartRequestRecord) => record.executionEndDateNoMillis, Some(OK)).toSeq.sortBy(_._1)
+			val kos = dataReader.numberOfEventsPerSecond((record: ChartRequestRecord) => record.executionEndDateNoMillis, Some(KO)).toSeq.sortBy(_._1)
 
-		// percentiles
-		val successDistribution = responseTimeDistribution(successRequests, globalMinResponseTime, globalMaxResponseTime, 100, numberOfRequests)
-		val failedDistribution = responseTimeDistribution(failedRequests, globalMinResponseTime, globalMaxResponseTime, 100, numberOfRequests)
+			val allSeries = new Series[Long, Int]("All requests", all, List(BLUE))
+			val kosSeries = new Series[Long, Int]("Failed requests", kos, List(RED))
+			val oksSeries = new Series[Long, Int]("Succeeded requests", oks, List(GREEN))
+			val pieRequestsSeries = new Series[String, Int]("Distribution", ("Success", count(oks)) :: ("Failures", count(kos)) :: Nil, List(GREEN, RED))
 
-		// Statistics
-		val globalAverageResponseTime = averageResponseTime(requests)
-		val successAverageResponseTime = averageResponseTime(successRequests)
-		val failedAverageResponseTime = averageResponseTime(failedRequests)
-		val percentiles = configuration.chartingIndicatorsPercentiles / 100.0
-		val (globalMinPercentiles, globalMaxPercentiles) = windowInPercentileRange(globalAverageResponseTime, percentiles, requests)
-		val (successMinPercentiles, successMaxPercentiles) = windowInPercentileRange(successAverageResponseTime, percentiles, successRequests)
-		val (failedMinPercentiles, failedMaxPercentiles) = windowInPercentileRange(failedAverageResponseTime, percentiles, failedRequests)
+			componentLibrary.getTransactionsChartComponent(allSeries, kosSeries, oksSeries, pieRequestsSeries)
+		}
 
-		// Create series
-		val responseTimesSuccessDistributionSeries = new Series[Long, Int]("Success", successDistribution, List(BLUE))
-		val responseTimesFailuresDistributionSeries = new Series[Long, Int]("Failure", failedDistribution, List(RED))
-		
-		// Create Statistics
-		val numberOfRequestsStatistics = new Statistics("numberOfRequests", numberOfRequests, numberOfSuccessfulRequests, numberOfFailedRequests)
-		val minResponseTimeStatistics = new Statistics("min", globalMinResponseTime, minResponseTime(successRequests), minResponseTime(failedRequests))
-		val maxResponseTimeStatistics = new Statistics("max", globalMaxResponseTime, maxResponseTime(successRequests), maxResponseTime(failedRequests))
-		val averageStatistics = new Statistics("average", globalAverageResponseTime, successAverageResponseTime, failedAverageResponseTime)
-		val stdDeviationStatistics = new Statistics("stdDeviation", responseTimeStandardDeviation(requests), responseTimeStandardDeviation(successRequests), responseTimeStandardDeviation(failedRequests))
-		val minPercentiles = new Statistics("minPercentiles", globalMinPercentiles, successMinPercentiles, failedMinPercentiles)
-		val maxPercentiles = new Statistics("maxPercentiles", globalMaxPercentiles, successMaxPercentiles, failedMaxPercentiles)
+		def responseTimeDistributionChartComponent = {
+			val (okDistribution, koDistribution) = dataReader.responseTimeDistribution(100)
+			val okDistributionSeries = new Series[Long, Int]("Success", okDistribution, List(BLUE))
+			val koDistributionSeries = new Series[Long, Int]("Failure", koDistribution, List(RED))
 
-		// Indicators Series
-		val indicatorsColumnData = numberOfRequestInResponseTimeRange(requests, configuration.chartingIndicatorsLowerBound, configuration.chartingIndicatorsHigherBound)
-		val indicatorsPieData = indicatorsColumnData.map { case (name, count) => name -> count * 100 / numberOfRequests }
+			componentLibrary.getRequestDetailsResponseTimeDistributionChartComponent(okDistributionSeries, koDistributionSeries)
+		}
 
-		val indicatorsColumnSeries = new Series[String, Int](EMPTY, indicatorsColumnData, List(GREEN, YELLOW, ORANGE, RED))
-		val indicatorsPieSeries = new Series[String, Int](EMPTY, indicatorsPieData, List(GREEN, YELLOW, ORANGE, RED))
-		
-		
+		def statisticsComponent = {
+			val percent1 = configuration.chartingIndicatorsPercentile1 / 100.0
+			val percent2 = configuration.chartingIndicatorsPercentile2 / 100.0
+
+			val (globalPercentile1, globalPercentile2) = dataReader.percentiles(percent1, percent2)
+			val (successPercentile1, successPercentile2) = dataReader.percentiles(percent1, percent2, Some(OK))
+			val (failedPercentile1, failedPercentile2) = dataReader.percentiles(percent1, percent2, Some(KO))
+
+			val globalMeanResponseTime = dataReader.meanResponseTime()
+			val okMeanResponseTime = dataReader.meanResponseTime(Some(OK))
+			val koMeanResponseTime = dataReader.meanResponseTime(Some(KO))
+			val globalStandardDeviation = dataReader.responseTimeStandardDeviation()
+			val okStandardDeviation = dataReader.responseTimeStandardDeviation(Some(OK))
+			val koStandardDeviation = dataReader.responseTimeStandardDeviation(Some(KO))
+
+			val numberOfRequestsStatistics = new Statistics("numberOfRequests", totalCount, okCount, koCount)
+			val minResponseTimeStatistics = new Statistics("min", globalMinResponseTime, okMinResponseTime, koMinResponseTime)
+			val maxResponseTimeStatistics = new Statistics("max", globalMaxResponseTime, okMaxResponseTime, koMaxResponseTime)
+			val meanStatistics = new Statistics("mean", globalMeanResponseTime, okMeanResponseTime, koMeanResponseTime)
+			val stdDeviationStatistics = new Statistics("stdDeviation", globalStandardDeviation, okStandardDeviation, koStandardDeviation)
+			val percentiles1 = new Statistics("percentiles1", globalPercentile1, successPercentile1, failedPercentile1)
+			val percentiles2 = new Statistics("percentiles2", globalPercentile2, successPercentile2, failedPercentile2)
+
+			new StatisticsTextComponent(numberOfRequestsStatistics, minResponseTimeStatistics, maxResponseTimeStatistics, meanStatistics, stdDeviationStatistics, percentiles1, percentiles2)
+		}
+
+		def indicatorChartComponent = {
+			val indicatorsColumnData = dataReader.numberOfRequestInResponseTimeRange(configuration.chartingIndicatorsLowerBound, configuration.chartingIndicatorsHigherBound)
+			val indicatorsPieData = indicatorsColumnData.map { case (name, count) => name -> count * 100 / totalCount }
+			val indicatorsColumnSeries = new Series[String, Int](EMPTY, indicatorsColumnData, List(GREEN, YELLOW, ORANGE, RED))
+			val indicatorsPieSeries = new Series[String, Int](EMPTY, indicatorsPieData, List(GREEN, YELLOW, ORANGE, RED))
+
+			componentLibrary.getRequestDetailsIndicatorChartComponent(indicatorsColumnSeries, indicatorsPieSeries)
+		}
+
 		val template = new GlobalPageTemplate(
-				new StatisticsTextComponent(numberOfRequestsStatistics, minResponseTimeStatistics, maxResponseTimeStatistics, averageStatistics, stdDeviationStatistics, minPercentiles, maxPercentiles),
-				componentLibrary.getRequestDetailsIndicatorChartComponent(indicatorsColumnSeries, indicatorsPieSeries),
-				componentLibrary.getActiveSessionsChartComponent(activeSessionsSeries), 
-				componentLibrary.getRequestsChartComponent(allRequestsSeries, failedRequestsSeries, succeededRequestsSeries, pieRequestsSeries),
-				componentLibrary.getTransactionsChartComponent(allTransactions, failedTransactions, succeededTransactions, pieTransactionsSeries))
+			statisticsComponent,
+			indicatorChartComponent,
+			activeSessionsChartComponent,
+			responseTimeDistributionChartComponent,
+			requestsChartComponent,
+			transactionsChartComponent)
 
 		new TemplateWriter(globalFile(runOn)).writeToFile(template.getOutput)
-
 	}
 }

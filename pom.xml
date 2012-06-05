@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.excilys.ebi.gatling</groupId>
 	<artifactId>gatling-parent</artifactId>
-	<version>1.2.0-SNAPSHOT</version>
+	<version>1.2.1-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<inceptionYear>2011</inceptionYear>
 	<modules>
@@ -30,7 +29,8 @@
 		<connection>scm:git:git@github.com:excilys/gatling.git</connection>
 		<developerConnection>scm:git:git@github.com:excilys/gatling.git</developerConnection>
 		<url>https://github.com/excilys/gatling</url>
-	</scm>
+	  <tag>HEAD</tag>
+  </scm>
 
 	<distributionManagement>
 		<repository>
@@ -85,14 +85,14 @@
 		<encoding>UTF-8</encoding>
 		<scala.version>2.9.2</scala.version>
 		<ahc.version>1.7.5</ahc.version>
-		<akka.version>2.0.2-RC1</akka.version>
+		<akka.version>2.0.2</akka.version>
 		<jaxen.version>1.1.4</jaxen.version>
 		<xerces.version>2.11.0</xerces.version>
 		<xml-apis.version>1.4.01</xml-apis.version>
-		<logback.version>1.0.3</logback.version>
+		<logback.version>1.0.4</logback.version>
 		<slf4j.version>1.6.4</slf4j.version>
 		<scalate.version>1.5.3</scalate.version>
-		<netty.version>3.4.5.Final</netty.version>
+		<netty.version>3.4.6.Final</netty.version>
 		<joda-time.version>2.1</joda-time.version>
 		<joda-convert.version>1.2</joda-convert.version>
 		<xstream.version>1.4.2</xstream.version>
@@ -103,7 +103,7 @@
 		<ant.version>1.8.3</ant.version>
 		<grizzled-slf4j.version>0.6.9</grizzled-slf4j.version>
 		<jackson.version>2.0.2</jackson.version>
-		<commons-math.version>3.0</commons-math.version>
+		<commons-math3.version>3.0</commons-math3.version>
 		<jodd.version>3.3.3</jodd.version>
 		<asm.version>4.0</asm.version>
 		<junit.version>4.10</junit.version>
@@ -111,7 +111,7 @@
 
 		<maven2.version>2.2.1</maven2.version>
 		<maven-compiler-plugin.version>2.4</maven-compiler-plugin.version>
-		<maven-assembly-plugin.version>2.3</maven-assembly-plugin.version>
+		<maven-assembly-plugin.version>2.2.2</maven-assembly-plugin.version>
 		<maven-jar-plugin.version>2.4</maven-jar-plugin.version>
 		<scala-maven-plugin.version>3.0.2</scala-maven-plugin.version>
 		<maven-surefire-plugin.version>2.12</maven-surefire-plugin.version>
@@ -322,10 +322,10 @@
 			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-math3</artifactId>
-				<version>${commons-math.version}</version>
+				<version>${commons-math3.version}</version>
 			</dependency>
-                        <dependency>	
-                                <groupId>org.jodd</groupId>
+			<dependency>
+				<groupId>org.jodd</groupId>
 				<artifactId>jodd-wot</artifactId>
 				<version>${jodd.version}</version>
 				<exclusions>
@@ -385,9 +385,7 @@
 							</goals>
 							<configuration>
 								<args>
-									<arg>-make:transitive</arg>
-									<arg>-dependencyfile</arg>
-									<arg>${project.build.directory}/.scala_dependencies</arg>
+									<arg>-deprecation</arg>
 								</args>
 							</configuration>
 						</execution>
@@ -399,15 +397,13 @@
 					<configuration>
 						<useFile>false</useFile>
 						<includes>
-							<include>**/*Test.*</include>
-							<include>**/*Suite.*</include>
 							<include>**/*Spec.*</include>
 						</includes>
 					</configuration>
 				</plugin>
 				<plugin>
 					<artifactId>maven-release-plugin</artifactId>
-					<version>${maven-release-plugin.version}</version><!--$NO-MVN-MAN-VER$ -->
+					<version>${maven-release-plugin.version}</version>
 					<configuration>
 						<autoVersionSubmodules>true</autoVersionSubmodules>
 						<tagNameFormat>@{project.version}</tagNameFormat>
@@ -419,6 +415,7 @@
 					<version>${maven-license-plugin.version}</version>
 					<configuration>
 						<header>src/etc/header.txt</header>
+						<strictCheck>false</strictCheck>
 						<excludes>
 							<exclude>**/jquery.min.js</exclude>
 						</excludes>

@@ -16,15 +16,19 @@
 package com.excilys.ebi.gatling.recorder.http.handler;
 
 import java.net.URI
+
 import scala.collection.JavaConversions.asScalaBuffer
+
 import org.jboss.netty.channel.{ SimpleChannelHandler, MessageEvent, ExceptionEvent, ChannelHandlerContext, ChannelFutureListener, ChannelFuture }
 import org.jboss.netty.handler.codec.http.{ HttpRequest, DefaultHttpRequest }
+
+import com.excilys.ebi.gatling.http.Headers
 import com.excilys.ebi.gatling.recorder.config.ProxyConfig
 import com.excilys.ebi.gatling.recorder.controller.RecorderController
 import com.excilys.ebi.gatling.recorder.http.GatlingHttpProxy
-import grizzled.slf4j.Logging
-import com.excilys.ebi.gatling.http.Headers
 import com.ning.http.util.Base64
+
+import grizzled.slf4j.Logging
 
 abstract class AbstractBrowserRequestHandler(proxyConfig: ProxyConfig) extends SimpleChannelHandler with Logging {
 
@@ -37,8 +41,8 @@ abstract class AbstractBrowserRequestHandler(proxyConfig: ProxyConfig) extends S
 				proxyConfig.host match {
 					case Some(_) =>
 						for {
-							val username <- proxyConfig.username
-							val password <- proxyConfig.password
+							username <- proxyConfig.username
+							password <- proxyConfig.password
 						} {
 							val proxyAuth = "Basic " + Base64.encode((username + ":" + password).getBytes)
 							request.setHeader(Headers.Names.PROXY_AUTHORIZATION, proxyAuth)

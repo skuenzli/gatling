@@ -13,25 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.excilys.ebi.gatling.charts.series
+package com.excilys.ebi.gatling.charts.view.util
 
-import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
+object ViewHelper {
 
-class Series[X, Y](val name: String, val data: Seq[(X, Y)], val colors: List[String]) {
-
-	def sample: Seq[(X, Y)] = {
-		val nbMax = configuration.chartingMaxPlotPerSerie
-		val nb = data.size
-		if (nb <= nbMax)
-			data
-		else {
-			var i = 0
-			data.filter { plot =>
-				i = i + 1
-				isPlotMandatory(plot) || i % (nb / nbMax) == 0
-			}
+	/**
+	 * @param n ordinal number to add a suffix to
+	 */
+	def ordinalNumberSuffix(n: Long) = {
+		n % 10 match {
+			case _ if (11 to 13) contains n % 100 => "th"
+			case 1 => "st"
+			case 2 => "nd"
+			case 3 => "rd"
+			case _ => "th"
 		}
 	}
-
-	def isPlotMandatory(plot: (X, Y)) = false
 }

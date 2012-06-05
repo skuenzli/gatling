@@ -16,24 +16,24 @@
 package com.excilys.ebi.gatling.charts.result.reader
 
 import java.util.regex.Pattern
-import scala.collection.immutable.SortedMap
-import scala.collection.mutable.ArrayBuffer
+
+import scala.collection.mutable
 import scala.io.Source
-import org.joda.time.DateTime
+
+import com.excilys.ebi.gatling.charts.result.reader.FileDataReader.TABULATION_PATTERN
+import com.excilys.ebi.gatling.charts.util.StatisticsHelper
 import com.excilys.ebi.gatling.core.action.EndAction.END_OF_SCENARIO
 import com.excilys.ebi.gatling.core.action.StartAction.START_OF_SCENARIO
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
 import com.excilys.ebi.gatling.core.config.GatlingFiles.simulationLogFile
-import com.excilys.ebi.gatling.core.result.message.RecordType._
-import com.excilys.ebi.gatling.core.result.message.RequestRecord
-import com.excilys.ebi.gatling.core.result.message.RunRecord
-import com.excilys.ebi.gatling.core.result.reader.DataReader
+import com.excilys.ebi.gatling.core.result.message.RecordType.{ RUN, ACTION }
+import com.excilys.ebi.gatling.core.result.message.RequestStatus.RequestStatus
+import com.excilys.ebi.gatling.core.result.message.{ RunRecord, RequestStatus }
+import com.excilys.ebi.gatling.core.result.reader.{ DataReader, ChartRequestRecord }
 import com.excilys.ebi.gatling.core.util.DateHelper.parseTimestampString
 import com.excilys.ebi.gatling.core.util.FileHelper.TABULATION_SEPARATOR_STRING
-import FileDataReader.TABULATION_PATTERN
+
 import grizzled.slf4j.Logging
-import com.excilys.ebi.gatling.core.result.message.RequestStatus
-import scala.collection.mutable.ListBuffer
 
 object FileDataReader {
 	val TABULATION_PATTERN = Pattern.compile(TABULATION_SEPARATOR_STRING)
@@ -41,61 +41,78 @@ object FileDataReader {
 
 class FileDataReader(runUuid: String) extends DataReader(runUuid) with Logging {
 
-	private val (allRunRecords, allRequestRecords): (Seq[RunRecord], Seq[RequestRecord]) = {
+	val (allRunRecords, requestRecords, requestNames, scenarioNames): (Seq[RunRecord], Seq[ChartRequestRecord], Seq[String], Seq[String]) = {
 
-		val runRecords = new ListBuffer[RunRecord]
-		val records = new ListBuffer[RequestRecord]
+		val runRecords = new mutable.ArrayBuffer[RunRecord]
+		val requestRecords = new mutable.ArrayBuffer[ChartRequestRecord]
+		val requestNames = new mutable.HashMap[String, Long]
+		val scenarioNames = new mutable.HashMap[String, Long]
 
 		(for (line <- Source.fromFile(simulationLogFile(runUuid).jfile, configuration.encoding).getLines) yield TABULATION_PATTERN.split(line, 0))
 			.foreach {
 				case Array(RUN, runDate, runId, runDescription) =>
-					runRecords + RunRecord(parseTimestampString(runDate), runId.intern, runDescription.trim.intern)
+					runRecords += RunRecord(parseTimestampString(runDate), runId.intern, runDescription.trim.intern)
 				case Array(ACTION, scenarioName, userId, requestName, executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate, resultStatus, resultMessage) =>
-					records + RequestRecord(scenarioName.intern, userId.toInt, requestName.intern, executionStartDate.toLong, executionEndDate.toLong, requestSendingEndDate.toLong, responseReceivingStartDate.toLong, RequestStatus.withName(resultStatus), resultMessage.intern)
+					val executionStartDateLong = executionStartDate.toLong
+					requestRecords += ChartRequestRecord(scenarioName, userId.toInt, requestName, executionStartDateLong, executionEndDate.toLong, requestSendingEndDate.toLong, responseReceivingStartDate.toLong, RequestStatus.withName(resultStatus))
+					if (requestName != START_OF_SCENARIO && requestName != END_OF_SCENARIO) {
+
+						val entryTime = requestNames.getOrElse(requestName, Long.MaxValue)
+						if (executionStartDateLong < entryTime)
+							requestNames += (requestName -> executionStartDateLong)
+					}
+
+					val entryTime = scenarioNames.getOrElse(scenarioName, Long.MaxValue)
+					if (executionStartDateLong < entryTime)
+						scenarioNames += (scenarioName -> executionStartDateLong)
+
 				case record => logger.warn("Malformed line, skipping it : " + record.toList)
 			}
 
-		(runRecords, records.sortBy(_.executionStartDate))
+		val sortedRequestNames = requestNames.toSeq.sortBy(_._2).map(_._1)
+		val sortedScenarioNames = scenarioNames.toSeq.sortBy(_._2).map(_._1)
+
+		(runRecords, requestRecords, sortedRequestNames, sortedScenarioNames)
 	}
 
-	val realRequestRecords = allRequestRecords.filter(record => record.requestName != START_OF_SCENARIO && record.requestName != END_OF_SCENARIO)
+	val runRecord = {
+		if (allRunRecords.size != 1) warn("Expecting one and only one RunRecord")
+		allRunRecords.head
+	}
 
-	val runRecord = if (allRunRecords.size == 1) allRunRecords.head else throw new IllegalAccessException("Expecting one and only one RunRecord")
+	def numberOfActiveSessionsPerSecond(scenarioName: Option[String] = None): Seq[(Long, Int)] =
+		StatisticsHelper.numberOfActiveSessionsPerSecond(requestRecords, scenarioName)
 
-	val requestNames: Seq[String] = realRequestRecords.map(_.requestName).distinct
+	def numberOfEventsPerSecond(event: ChartRequestRecord => Long, status: Option[RequestStatus] = None, requestName: Option[String] = None): Map[Long, Int] =
+		StatisticsHelper.numberOfEventsPerSecond(requestRecords, event, status, requestName)
 
-	val scenarioNames: Seq[String] = realRequestRecords.map(_.scenarioName).distinct
+	def responseTimeDistribution(slotsNumber: Int, requestName: Option[String] = None) =
+		StatisticsHelper.responseTimeDistribution(requestRecords, slotsNumber, requestName)
 
-	val requestRecordsGroupByExecutionStartDateInSeconds: SortedMap[Long, Seq[RequestRecord]] = SortedMap(
-		allRequestRecords
-			.groupBy(line => new DateTime(line.executionStartDate).withMillisOfSecond(0).getMillis)
-			.toSeq: _*)
+	def percentiles(percentage1: Double, percentage2: Double, status: Option[RequestStatus] = None, requestName: Option[String] = None): (Long, Long) =
+		StatisticsHelper.percentiles(requestRecords, percentage1, percentage2, status, requestName)
 
-	def scenarioRequestRecordsGroupByExecutionStartDateInSeconds(scenarioName: String): SortedMap[Long, Seq[RequestRecord]] = SortedMap(
-		allRequestRecords
-			.filter(_.scenarioName == scenarioName)
-			.groupBy(line => new DateTime(line.executionStartDate).withMillisOfSecond(0).getMillis)
-			.toSeq: _*)
+	def countRequests(status: Option[RequestStatus] = None, requestName: Option[String] = None): Int =
+		StatisticsHelper.countRequests(requestRecords, status, requestName)
 
-	val realRequestRecordsGroupByExecutionStartDateInSeconds: SortedMap[Long, Seq[RequestRecord]] = SortedMap(
-		realRequestRecords
-			.groupBy(line => new DateTime(line.executionStartDate).withMillisOfSecond(0).getMillis)
-			.toSeq: _*)
+	def minResponseTime(status: Option[RequestStatus] = None, requestName: Option[String] = None): Long =
+		StatisticsHelper.minResponseTime(requestRecords, status, requestName)
 
-	val realRequestRecordsGroupByExecutionEndDateInSeconds: SortedMap[Long, Seq[RequestRecord]] = SortedMap(
-		realRequestRecords
-			.groupBy(record => new DateTime(record.executionStartDate + record.responseTime).withMillisOfSecond(0).getMillis)
-			.toSeq: _*)
+	def maxResponseTime(status: Option[RequestStatus] = None, requestName: Option[String] = None): Long =
+		StatisticsHelper.maxResponseTime(requestRecords, status, requestName)
 
-	def requestRecords(requestName: String): Seq[RequestRecord] = realRequestRecords.filter(_.requestName == requestName)
+	def meanResponseTime(status: Option[RequestStatus], requestName: Option[String]): Long =
+		StatisticsHelper.meanResponseTime(requestRecords, status, requestName)
 
-	def requestRecordsGroupByExecutionStartDate(requestName: String): SortedMap[Long, Seq[RequestRecord]] = SortedMap(
-		requestRecords(requestName)
-			.groupBy(_.executionStartDate)
-			.toSeq: _*)
+	def meanLatency(status: Option[RequestStatus], requestName: Option[String]): Long =
+		StatisticsHelper.meanLatency(requestRecords, status, requestName)
 
-	def requestRecordsGroupByExecutionStartDateInSeconds(requestName: String): SortedMap[Long, Seq[RequestRecord]] = SortedMap(
-		requestRecords(requestName)
-			.groupBy(line => new DateTime(line.executionStartDate).withMillisOfSecond(0).getMillis)
-			.toSeq: _*)
+	def responseTimeStandardDeviation(status: Option[RequestStatus] = None, requestName: Option[String] = None): Long =
+		StatisticsHelper.responseTimeStandardDeviation(requestRecords, status, requestName): Long
+
+	def numberOfRequestInResponseTimeRange(lowerBound: Int, higherBound: Int, requestName: Option[String] = None): Seq[(String, Int)] =
+		StatisticsHelper.numberOfRequestInResponseTimeRange(requestRecords, lowerBound, higherBound, requestName)
+
+	def requestRecordsGroupByExecutionStartDate(requestName: String): Seq[(Long, Seq[ChartRequestRecord])] =
+		StatisticsHelper.requestRecordsGroupByExecutionStartDate(requestRecords, requestName)
 }

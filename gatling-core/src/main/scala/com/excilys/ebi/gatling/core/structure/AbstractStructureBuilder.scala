@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
 
 import scala.annotation.tailrec
 
+import com.excilys.ebi.gatling.core.action.builder.ExpPauseActionBuilder.expPauseActionBuilder
 import com.excilys.ebi.gatling.core.action.builder.IfActionBuilder.ifActionBuilder
 import com.excilys.ebi.gatling.core.action.builder.PauseActionBuilder.pauseActionBuilder
 import com.excilys.ebi.gatling.core.action.builder.ExpPauseActionBuilder.expPauseActionBuilder
@@ -87,13 +88,13 @@ abstract class AbstractStructureBuilder[B <: AbstractStructureBuilder[B]](val ac
 	def pause(minDuration: Long, maxDuration: Option[Long] = None, durationUnit: TimeUnit = TimeUnit.SECONDS): B = newInstance((pauseActionBuilder.withMinDuration(minDuration).withMaxDuration(maxDuration).withTimeUnit(durationUnit)) :: actionBuilders)
 
 	/**
-	 * Method used to define drawn from an exponential distribution with the specified average duration.
+	 * Method used to define drawn from an exponential distribution with the specified mean duration.
 	 *
-	 * @param averageDuration the average duration of the pause
+	 * @param meanDuration the mean duration of the pause
 	 * @param durationUnit the time unit of the specified values
 	 * @return a new builder with a pause added to its actions
 	 */
-	def pauseExp(averageDuration: Long, durationUnit: TimeUnit = TimeUnit.SECONDS): B = newInstance((expPauseActionBuilder.withAverageDuration(averageDuration).withTimeUnit(durationUnit)) :: actionBuilders)
+	def pauseExp(meanDuration: Long, durationUnit: TimeUnit = TimeUnit.SECONDS): B = newInstance((expPauseActionBuilder.withMeanDuration(meanDuration).withTimeUnit(durationUnit)) :: actionBuilders)
 
 	/**
 	 * Method used to add a conditional execution in the scenario
