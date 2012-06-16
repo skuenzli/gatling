@@ -3,12 +3,13 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.excilys.ebi.gatling</groupId>
 	<artifactId>gatling-parent</artifactId>
-	<version>1.2.1-SNAPSHOT</version>
+	<version>1.2.3-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<inceptionYear>2011</inceptionYear>
 	<modules>
 		<module>gatling-core</module>
 		<module>gatling-jdbc</module>
+		<module>gatling-redis</module>
 		<module>gatling-http</module>
 		<module>gatling-app</module>
 		<module>gatling-recorder</module>
@@ -29,8 +30,8 @@
 		<connection>scm:git:git@github.com:excilys/gatling.git</connection>
 		<developerConnection>scm:git:git@github.com:excilys/gatling.git</developerConnection>
 		<url>https://github.com/excilys/gatling</url>
-	  <tag>HEAD</tag>
-  </scm>
+		<tag>HEAD</tag>
+	</scm>
 
 	<distributionManagement>
 		<repository>
@@ -74,7 +75,18 @@
 				<enabled>false</enabled>
 			</snapshots>
 		</repository>
-		<!-- http://repo.typesafe.com/typesafe/releases -->
+        <repository>
+            <id>typesafe</id>
+            <name>Typesafe Repository</name>
+            <url>http://repo.typesafe.com/typesafe/releases/</url>
+            <releases>
+                <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <!-- http://repo.typesafe.com/typesafe/releases -->
 		<!-- http://maven.jenkins-ci.org/content/repositories/releases -->
 		<!-- http://maven.twttr.com -->
 	</repositories>
@@ -89,10 +101,11 @@
 		<jaxen.version>1.1.4</jaxen.version>
 		<xerces.version>2.11.0</xerces.version>
 		<xml-apis.version>1.4.01</xml-apis.version>
-		<logback.version>1.0.4</logback.version>
-		<slf4j.version>1.6.4</slf4j.version>
+		<logback.version>1.0.6</logback.version>
+		<slf4j.version>1.6.5</slf4j.version>
 		<scalate.version>1.5.3</scalate.version>
-		<netty.version>3.4.6.Final</netty.version>
+		<netty.version>3.5.0.Final</netty.version>
+		<grizzly.version>2.2.10</grizzly.version>
 		<joda-time.version>2.1</joda-time.version>
 		<joda-convert.version>1.2</joda-convert.version>
 		<xstream.version>1.4.2</xstream.version>
@@ -104,10 +117,12 @@
 		<grizzled-slf4j.version>0.6.9</grizzled-slf4j.version>
 		<jackson.version>2.0.2</jackson.version>
 		<commons-math3.version>3.0</commons-math3.version>
+		<commons-io.version>2.3</commons-io.version>
 		<jodd.version>3.3.3</jodd.version>
 		<asm.version>4.0</asm.version>
+		<redis.version>2.5</redis.version>
 		<junit.version>4.10</junit.version>
-		<specs2.version>1.10</specs2.version>
+		<specs2.version>1.11</specs2.version>
 
 		<maven2.version>2.2.1</maven2.version>
 		<maven-compiler-plugin.version>2.4</maven-compiler-plugin.version>
@@ -119,6 +134,8 @@
 		<maven-license-plugin.version>1.10.b1</maven-license-plugin.version>
 		<maven-plugin-plugin.version>2.9</maven-plugin-plugin.version>
 		<build-helper-maven-plugin.version>1.7</build-helper-maven-plugin.version>
+
+		<header.basedir>${project.basedir}</header.basedir>
 	</properties>
 
 	<dependencyManagement>
@@ -136,6 +153,11 @@
 			<dependency>
 				<groupId>com.excilys.ebi.gatling</groupId>
 				<artifactId>gatling-jdbc</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.excilys.ebi.gatling</groupId>
+				<artifactId>gatling-redis</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
@@ -184,8 +206,18 @@
 				<version>${netty.version}</version>
 			</dependency>
 			<dependency>
+				<groupId>org.glassfish.grizzly</groupId>
+				<artifactId>grizzly-websockets</artifactId>
+				<version>${grizzly.version}</version>
+			</dependency>
+			<dependency>
 				<groupId>com.typesafe.akka</groupId>
 				<artifactId>akka-actor</artifactId>
+				<version>${akka.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.typesafe.akka</groupId>
+				<artifactId>akka-testkit</artifactId>
 				<version>${akka.version}</version>
 			</dependency>
 			<dependency>
@@ -336,6 +368,16 @@
 				</exclusions>
 			</dependency>
 			<dependency>
+				<groupId>commons-io</groupId>
+				<artifactId>commons-io</artifactId>
+				<version>${commons-io.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>net.debasishg</groupId>
+				<artifactId>redisclient_2.9.1</artifactId>
+				<version>${redis.version}</version>
+			</dependency>
+			<dependency>
 				<groupId>org.ow2.asm</groupId>
 				<artifactId>asm</artifactId>
 				<version>${asm.version}</version>
@@ -414,7 +456,7 @@
 					<artifactId>maven-license-plugin</artifactId>
 					<version>${maven-license-plugin.version}</version>
 					<configuration>
-						<header>src/etc/header.txt</header>
+						<header>${header.basedir}/src/etc/header.txt</header>
 						<strictCheck>false</strictCheck>
 						<excludes>
 							<exclude>**/jquery.min.js</exclude>

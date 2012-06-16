@@ -15,7 +15,7 @@
  */
 package com.excilys.ebi.gatling.http.ahc
 
-import java.lang.System.currentTimeMillis
+import java.lang.System.{ nanoTime, currentTimeMillis }
 import java.net.URLDecoder
 
 import scala.annotation.tailrec
@@ -31,7 +31,6 @@ import com.excilys.ebi.gatling.http.Headers.{ Names => HeaderNames }
 import com.excilys.ebi.gatling.http.action.HttpRequestAction.HTTP_CLIENT
 import com.excilys.ebi.gatling.http.ahc.GatlingAsyncHandlerActor.{ REDIRECT_STATUS_CODES, REDIRECTED_REQUEST_NAME_PATTERN }
 import com.excilys.ebi.gatling.http.check.HttpCheck
-import com.excilys.ebi.gatling.http.config.HttpConfig
 import com.excilys.ebi.gatling.http.cookie.CookieHandling
 import com.excilys.ebi.gatling.http.request.HttpPhase.HttpPhase
 import com.excilys.ebi.gatling.http.request.HttpPhase
@@ -41,61 +40,86 @@ import com.ning.http.client.{ Response, RequestBuilder, Request, FluentStringsMa
 import akka.actor.{ ReceiveTimeout, ActorRef, Actor }
 import akka.util.duration.intToDurationInt
 import grizzled.slf4j.Logging
+import com.excilys.ebi.gatling.http.config.{HttpProtocolConfiguration, HttpConfig}
 
 object GatlingAsyncHandlerActor {
 	val REDIRECTED_REQUEST_NAME_PATTERN = """(.+?) Redirect (\d+)""".r
 	val REDIRECT_STATUS_CODES = 301 to 303
 }
 
-class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], next: ActorRef, var requestName: String, var request: Request, followRedirect: Boolean, gatlingConfiguration: GatlingConfiguration) extends Actor with Logging with CookieHandling {
+class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], next: ActorRef,
+                               var requestName: String, var request: Request, followRedirect: Boolean,
+                               protocolConfiguration: Option[HttpProtocolConfiguration],
+                               gatlingConfiguration: GatlingConfiguration,
+                               handlerFactory: HandlerFactory, responseBuilderFactory: ExtendedResponseBuilderFactory)
+  extends Actor with Logging with CookieHandling {
 
+	var responseBuilder = responseBuilderFactory(session)
 	var executionStartDate = currentTimeMillis
+	var executionStartDateNanos = nanoTime
 	var requestSendingEndDate = 0L
 	var responseReceivingStartDate = 0L
 	var executionEndDate = 0L
 
 	resetTimeout
 
+	private def computeTimeFromNanos(nanos: Long) = (nanos - executionStartDateNanos) / 1000000 + executionStartDate
+
 	def receive = {
-		case OnHeaderWriteCompleted(time) =>
+		case OnHeaderWriteCompleted(nanos) =>
 			resetTimeout
-			requestSendingEndDate = time
+			requestSendingEndDate = computeTimeFromNanos(nanos)
 
-		case OnContentWriteCompleted(time) =>
+		case OnContentWriteCompleted(nanos) =>
 			resetTimeout
-			requestSendingEndDate = time
+			requestSendingEndDate = computeTimeFromNanos(nanos)
 
-		case OnStatusReceived(time) =>
+		case OnStatusReceived(status, nanos) =>
 			resetTimeout
-			responseReceivingStartDate = time
+			responseReceivingStartDate = computeTimeFromNanos(nanos)
+			responseBuilder.accumulate(status)
 
-		case OnCompleted(response, time) =>
-			executionEndDate = time
-			processResponse(response)
+		case OnHeadersReceived(headers) =>
+			resetTimeout
+			responseBuilder.accumulate(headers)
 
-		case OnThrowable(errorMessage, time) =>
-			requestSendingEndDate = if (requestSendingEndDate != 0L) requestSendingEndDate else time
-			responseReceivingStartDate = if (responseReceivingStartDate != 0L) responseReceivingStartDate else time
-			executionEndDate = time
-			logRequest(KO, errorMessage)
+		case OnBodyPartReceived(bodyPart) =>
+			resetTimeout
+			responseBuilder.accumulate(bodyPart)
+
+		case OnCompleted(nanos) =>
+			executionEndDate = computeTimeFromNanos(nanos)
+			processResponse(responseBuilder.build)
+
+		case OnThrowable(errorMessage, nanos) =>
+			executionEndDate = computeTimeFromNanos(nanos)
+			requestSendingEndDate = if (requestSendingEndDate != 0L) requestSendingEndDate else executionEndDate
+			responseReceivingStartDate = if (responseReceivingStartDate != 0L) responseReceivingStartDate else executionEndDate
+      logRequest(KO, errorMessage, extractExtraRequestInfo(protocolConfiguration, request))
 			executeNext(session)
 
 		case ReceiveTimeout =>
 			error("GatlingAsyncHandlerActor timed out")
-			logRequest(KO, "GatlingAsyncHandlerActor timed out")
+			logRequest(KO, "GatlingAsyncHandlerActor timed out", extractExtraRequestInfo(protocolConfiguration, request))
 			executeNext(session)
 
 		case m => throw new IllegalArgumentException("Unknown message type " + m)
 	}
 
-	def resetTimeout = context.setReceiveTimeout(HttpConfig.GATLING_HTTP_CONFIG_REQUEST_TIMEOUT milliseconds)
+	def resetTimeout = context.setReceiveTimeout(HttpConfig.GATLING_HTTP_CONFIG_REQUEST_TIMEOUT_IN_MS milliseconds)
 
-	private def logRequest(requestResult: RequestStatus, requestMessage: String = "Request executed successfully") = DataWriter.logRequest(session.scenarioName, session.userId, "Request " + requestName, executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate, requestResult, requestMessage)
+	private def logRequest(requestResult: RequestStatus,
+                         requestMessage: String = "Request executed successfully",
+                         extraInfo:List[String] = List()) = {
+    DataWriter.logRequest(session.scenarioName, session.userId, "Request " + requestName,
+      executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate,
+      requestResult, requestMessage, extraInfo)
+  }
 
 	/**
 	 * This method is used to send a message to the data writer actor and then execute the next action
 	 *
-	 * @param session the new Session
+	 * @param newSession the new Session
 	 */
 	private def executeNext(newSession: Session) {
 		next ! newSession.increaseTimeShift(currentTimeMillis - executionEndDate)
@@ -111,15 +135,17 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 
 			def configureForNextRedirect(newSession: Session, newRequestName: String, newRequest: Request) {
 				this.session = newSession
+				this.responseBuilder = responseBuilderFactory(session)
 				this.requestName = newRequestName
 				this.request = newRequest
 				this.executionStartDate = currentTimeMillis
+				this.executionStartDateNanos = nanoTime
 				this.requestSendingEndDate = 0L
 				this.responseReceivingStartDate = 0L
 				this.executionEndDate = 0L
 			}
 
-			logRequest(OK)
+			logRequest(OK, extraInfo=extractExtraInfo(response))
 
 			val redirectUrl = computeRedirectUrl(URLDecoder.decode(response.getHeader(HeaderNames.LOCATION), gatlingConfiguration.encoding), request.getUrl)
 
@@ -131,17 +157,17 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 			val newRequest = requestBuilder.build
 			newRequest.getHeaders.remove(HeaderNames.CONTENT_LENGTH)
 
-			val newRequestName = REDIRECTED_REQUEST_NAME_PATTERN.findFirstMatchIn(requestName) match {
-				case Some(nameMatch) =>
-					val requestBaseName = nameMatch.group(1)
-					val redirectCount = nameMatch.group(2).toInt
-					new StringBuilder().append(requestBaseName).append(" Redirect ").append(redirectCount + 1).toString
-				case None => requestName + " Redirect 1"
+			val newRequestName = requestName match {
+				case REDIRECTED_REQUEST_NAME_PATTERN(requestBaseName, redirectCount) =>
+					new StringBuilder().append(requestBaseName).append(" Redirect ").append(redirectCount.toInt + 1).toString
+
+				case _ =>
+					requestName + " Redirect 1"
 			}
 
 			configureForNextRedirect(sessionWithUpdatedCookies, newRequestName, newRequest)
 
-			HTTP_CLIENT.executeRequest(newRequest, new GatlingAsyncHandler(checks, newRequestName, self))
+			HTTP_CLIENT.executeRequest(newRequest, handlerFactory(newRequestName, self))
 		}
 
 		@tailrec
@@ -149,7 +175,7 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 
 			phases match {
 				case Nil =>
-					logRequest(OK)
+					logRequest(OK, extraInfo=extractExtraInfo(response))
 					executeNext(session)
 
 				case phase :: otherPhases =>
@@ -163,7 +189,7 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 							else
 								warn(new StringBuilder().append("Check on request '").append(requestName).append("' failed : ").append(errorMessage))
 
-							logRequest(KO, errorMessage)
+							logRequest(KO, errorMessage, extraInfo=extractExtraInfo(response))
 							executeNext(newSession)
 
 						case _ => checkPhasesRec(newSession, otherPhases)
@@ -178,4 +204,47 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 		else
 			checkPhasesRec(sessionWithUpdatedCookies, HttpPhase.phases)
 	}
+
+  /**
+   * Extract extra info from both request and response.
+   *
+   * @param response is the response to extract data from; request is retrieved from the property
+   * @return
+   */
+  private def extractExtraInfo(response: Response): List[String] = {
+    val extraInfo: List[String] = extractExtraRequestInfo(protocolConfiguration, request)
+    extraInfo ::: extractExtraResponseInfo(protocolConfiguration, response)
+  }
+
+  private def extractExtraRequestInfo(protocolConfiguration:Option[HttpProtocolConfiguration], request:Request):List[String] = {
+    try {
+      if (request != null && protocolConfiguration.isDefined) {
+        val httpProtocolConfig: HttpProtocolConfiguration = protocolConfiguration.get
+        if (httpProtocolConfig.extraRequestInfoExtractor.isDefined) {
+          val extractor: (Request => List[String]) = httpProtocolConfig.extraRequestInfoExtractor.get
+          return extractor(request)
+        }
+      }
+    } catch {
+      case e:Exception => warn("Encountered error while extracting extra request info", e)
+    }
+    List()
+  }
+
+  private def extractExtraResponseInfo(protocolConfiguration:Option[HttpProtocolConfiguration], response:Response):List[String] = {
+    try {
+      if (response != null && protocolConfiguration.isDefined) {
+        val httpProtocolConfig: HttpProtocolConfiguration = protocolConfiguration.get
+        if (httpProtocolConfig.extraResponseInfoExtractor.isDefined) {
+          val extractor: (Response => List[String]) = httpProtocolConfig.extraResponseInfoExtractor.get
+          return extractor(response)
+        }
+      }
+    }
+    catch {
+      case e:Exception => warn("Encountered error while extracting extra response info", e)
+    }
+    List()
+  }
+
 }

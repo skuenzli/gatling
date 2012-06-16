@@ -18,7 +18,7 @@ package com.excilys.ebi.gatling.core.result.writer
 import java.io.{ OutputStreamWriter, FileOutputStream, BufferedOutputStream }
 import java.util.concurrent.CountDownLatch
 
-import com.excilys.ebi.gatling.core.config.GatlingFiles.simulationLogFile
+import com.excilys.ebi.gatling.core.config.GatlingFiles.simulationLogDirectory
 import com.excilys.ebi.gatling.core.result.message.RecordType.{ RUN, ACTION }
 import com.excilys.ebi.gatling.core.result.message.{ RequestRecord, InitializeDataWriter, FlushDataWriter }
 import com.excilys.ebi.gatling.core.util.DateHelper.toTimestamp
@@ -26,6 +26,40 @@ import com.excilys.ebi.gatling.core.util.FileHelper.TABULATION_SEPARATOR
 import com.excilys.ebi.gatling.core.util.StringHelper.END_OF_LINE
 
 import grizzled.slf4j.Logging
+
+object FileDataWriter {
+  val sanitizerPattern = """[\n\r\t]""".r
+
+  private[writer] def append(appendable:Appendable, requestRecord:RequestRecord) {
+
+    appendable.append(ACTION).append(TABULATION_SEPARATOR)
+      .append(requestRecord.scenarioName).append(TABULATION_SEPARATOR)
+      .append(requestRecord.userId.toString).append(TABULATION_SEPARATOR)
+      .append(requestRecord.requestName).append(TABULATION_SEPARATOR)
+      .append(requestRecord.executionStartDate.toString).append(TABULATION_SEPARATOR)
+      .append(requestRecord.executionEndDate.toString).append(TABULATION_SEPARATOR)
+      .append(requestRecord.requestSendingEndDate.toString).append(TABULATION_SEPARATOR)
+      .append(requestRecord.responseReceivingStartDate.toString).append(TABULATION_SEPARATOR)
+      .append(requestRecord.requestStatus.toString).append(TABULATION_SEPARATOR)
+      .append(requestRecord.requestMessage)
+
+    requestRecord.extraInfo.foreach((info: String) => {
+      appendable.append(TABULATION_SEPARATOR).append(sanitize(info))
+    })
+
+    appendable.append(END_OF_LINE)
+  }
+
+  /**
+   * Converts whitespace characters that would break the simulation log format into spaces.
+   * @param input
+   * @return
+   */
+  private[writer] def sanitize(input:String):String = {
+    sanitizerPattern.replaceAllIn(input, " ")
+  }
+
+}
 
 /**
  * File implementation of the DataWriter
@@ -47,7 +81,8 @@ class FileDataWriter extends DataWriter with Logging {
 	def uninitialized: Receive = {
 		case InitializeDataWriter(runRecord, totalUsersCount, latch, encoding) =>
 			this.latch = latch
-			osw = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(simulationLogFile(runRecord.runUuid).toString)), encoding)
+			val simulationLog = simulationLogDirectory(runRecord.runUuid) / "simulation.log"
+			osw = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(simulationLog.toString)), encoding)
 			osw.append(RUN).append(TABULATION_SEPARATOR)
 				.append(toTimestamp(runRecord.runDate)).append(TABULATION_SEPARATOR)
 				.append(runRecord.runId).append(TABULATION_SEPARATOR)
@@ -61,18 +96,8 @@ class FileDataWriter extends DataWriter with Logging {
 	}
 
 	def initialized: Receive = {
-		case RequestRecord(scenarioName, userId, actionName, executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate, resultStatus, resultMessage) =>
-			osw.append(ACTION).append(TABULATION_SEPARATOR)
-				.append(scenarioName).append(TABULATION_SEPARATOR)
-				.append(userId.toString).append(TABULATION_SEPARATOR)
-				.append(actionName).append(TABULATION_SEPARATOR)
-				.append(executionStartDate.toString).append(TABULATION_SEPARATOR)
-				.append(executionEndDate.toString).append(TABULATION_SEPARATOR)
-				.append(requestSendingEndDate.toString).append(TABULATION_SEPARATOR)
-				.append(responseReceivingStartDate.toString).append(TABULATION_SEPARATOR)
-				.append(resultStatus.toString).append(TABULATION_SEPARATOR)
-				.append(resultMessage)
-				.append(END_OF_LINE)
+		case requestRecord:RequestRecord =>
+			FileDataWriter.append(osw, requestRecord)
 
 		case FlushDataWriter =>
 			info("Received flush order")

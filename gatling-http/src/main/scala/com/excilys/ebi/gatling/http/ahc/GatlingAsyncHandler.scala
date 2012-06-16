@@ -18,13 +18,20 @@ package com.excilys.ebi.gatling.http.ahc
 import java.lang.Void
 
 import com.excilys.ebi.gatling.http.check.HttpCheck
-import com.excilys.ebi.gatling.http.request.HttpPhase.CompletePageReceived
+import com.excilys.ebi.gatling.http.request.HttpPhase.{ CompletePageReceived, BodyPartReceived }
 import com.ning.http.client.AsyncHandler.STATE.CONTINUE
-import com.ning.http.client.Response.ResponseBuilder
 import com.ning.http.client.{ HttpResponseStatus, HttpResponseHeaders, HttpResponseBodyPart, AsyncHandler, ProgressAsyncHandler }
 
 import akka.actor.ActorRef
 import grizzled.slf4j.Logging
+
+object GatlingAsyncHandler {
+
+	def newHandlerFactory(checks: List[HttpCheck]): HandlerFactory = {
+		val useBodyParts = checks.exists(check => check.phase == BodyPartReceived || check.phase == CompletePageReceived)
+		(requestName: String, actor: ActorRef) => new GatlingAsyncHandler(requestName, actor, useBodyParts)
+	}
+}
 
 /**
  * This class is the AsyncHandler that AsyncHttpClient needs to process a request's response
@@ -32,18 +39,12 @@ import grizzled.slf4j.Logging
  * It is part of the HttpRequestAction
  *
  * @constructor constructs a GatlingAsyncHandler
- * @param session the session of the scenario
- * @param checks the checks that will be done on response
- * @param next the next action to be executed
  * @param requestName the name of the request
+ * @param actor the actor that will perform the logic outside of the IO thread
+ * @param useBodyParts id body parts should be sent to the actor
  */
-class GatlingAsyncHandler(checks: List[HttpCheck], requestName: String, actor: ActorRef)
+class GatlingAsyncHandler(requestName: String, actor: ActorRef, useBodyParts: Boolean)
 		extends AsyncHandler[Void] with ProgressAsyncHandler[Void] with Logging {
-
-	val responseBuilder = new ResponseBuilder
-
-	// only store bodyparts if they are to be analyzed
-	val useBodyParts = checks.find(_.phase == CompletePageReceived).isDefined
 
 	def onHeaderWriteCompleted = {
 		actor ! new OnHeaderWriteCompleted
@@ -58,24 +59,22 @@ class GatlingAsyncHandler(checks: List[HttpCheck], requestName: String, actor: A
 	def onContentWriteProgress(amount: Long, current: Long, total: Long) = CONTINUE
 
 	def onStatusReceived(responseStatus: HttpResponseStatus) = {
-		responseBuilder.accumulate(responseStatus)
-		actor ! new OnStatusReceived
+		actor ! new OnStatusReceived(responseStatus)
 		CONTINUE
 	}
 
 	def onHeadersReceived(headers: HttpResponseHeaders) = {
-		responseBuilder.accumulate(headers)
+		actor ! new OnHeadersReceived(headers)
 		CONTINUE
 	}
 
 	def onBodyPartReceived(bodyPart: HttpResponseBodyPart) = {
-		if (useBodyParts)
-			responseBuilder.accumulate(bodyPart)
+		actor ! new OnBodyPartReceived(if (useBodyParts) Some(bodyPart) else None)
 		CONTINUE
 	}
 
 	def onCompleted: Void = {
-		actor ! new OnCompleted(responseBuilder.build)
+		actor ! new OnCompleted
 		null
 	}
 

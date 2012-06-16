@@ -15,14 +15,16 @@
  */
 package com.excilys.ebi.gatling.http.ahc
 
-import java.lang.System.currentTimeMillis
+import java.lang.System.nanoTime
 
-import com.ning.http.client.Response
+import com.ning.http.client.{ HttpResponseStatus, HttpResponseHeaders, HttpResponseBodyPart }
 
-sealed trait HttpEvent
+sealed abstract class HttpEvent
 
-case class OnHeaderWriteCompleted(time: Long = currentTimeMillis) extends HttpEvent
-case class OnContentWriteCompleted(time: Long = currentTimeMillis) extends HttpEvent
-case class OnStatusReceived(time: Long = currentTimeMillis) extends HttpEvent
-case class OnCompleted(response: Response, time: Long = currentTimeMillis) extends HttpEvent
-case class OnThrowable(errorMessage: String, time: Long = currentTimeMillis) extends HttpEvent
+case class OnHeaderWriteCompleted(nanos: Long = nanoTime) extends HttpEvent
+case class OnContentWriteCompleted(nanos: Long = nanoTime) extends HttpEvent
+case class OnStatusReceived(responseStatus: HttpResponseStatus, nanos: Long = nanoTime) extends HttpEvent
+case class OnHeadersReceived(headers: HttpResponseHeaders) extends HttpEvent
+case class OnBodyPartReceived(bodyPart: Option[HttpResponseBodyPart] = None) extends HttpEvent
+case class OnCompleted(time: Long = nanoTime) extends HttpEvent
+case class OnThrowable(errorMessage: String, nanos: Long = nanoTime) extends HttpEvent

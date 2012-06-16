@@ -4,11 +4,15 @@
 	<parent>
 		<artifactId>gatling-parent</artifactId>
 		<groupId>com.excilys.ebi.gatling</groupId>
-		<version>1.2.1-SNAPSHOT</version>
+		<version>1.2.3-SNAPSHOT</version>
 	</parent>
 	<artifactId>gatling-core</artifactId>
 	<name>${project.artifactId}</name>
 	<description>Gatling Core functionnalities</description>
+
+	<properties>
+		<header.basedir>${project.parent.basedir}</header.basedir>
+	</properties>
 
 	<dependencies>
 		<!-- compile -->
@@ -64,7 +68,6 @@
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-math3</artifactId>
 		</dependency>
-
 		<!-- CSSelly : used for implementing the CSS checks -->
 		<dependency>
 			<groupId>org.jodd</groupId>
@@ -104,6 +107,11 @@
 			<artifactId>specs2_2.9.2</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>commons-io</groupId>
+			<artifactId>commons-io</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -112,22 +120,15 @@
 				<groupId>net.alchim31.maven</groupId>
 				<artifactId>scala-maven-plugin</artifactId>
 			</plugin>
-<!--
-            <plugin>
-                <groupId>com.mmakowski</groupId>
-                <artifactId>maven-specs2-plugin</artifactId>
-                <version>0.2.1</version>
-                <executions>
-                    <execution>
-                        <id>verify</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>run-specs</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
--->
+			<plugin>
+				<groupId>com.mycila.maven-license-plugin</groupId>
+				<artifactId>maven-license-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>src/test/resources/gatling-core-1.2.1.pom</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 </project>

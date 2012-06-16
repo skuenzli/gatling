@@ -4,11 +4,15 @@
 	<parent>
 		<artifactId>gatling-parent</artifactId>
 		<groupId>com.excilys.ebi.gatling</groupId>
-		<version>1.2.1-SNAPSHOT</version>
+		<version>1.2.3-SNAPSHOT</version>
 	</parent>
 	<artifactId>gatling-app</artifactId>
 	<name>${project.artifactId}</name>
 	<description>Gatling command line application</description>
+
+	<properties>
+		<header.basedir>${project.parent.basedir}</header.basedir>
+	</properties>
 
 	<dependencies>
 		<dependency>
@@ -18,6 +22,10 @@
 		<dependency>
 			<groupId>com.excilys.ebi.gatling</groupId>
 			<artifactId>gatling-jdbc</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.excilys.ebi.gatling</groupId>
+			<artifactId>gatling-redis</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>com.excilys.ebi.gatling</groupId>

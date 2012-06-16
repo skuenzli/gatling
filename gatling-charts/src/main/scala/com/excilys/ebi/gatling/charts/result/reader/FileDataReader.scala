@@ -19,13 +19,14 @@ import java.util.regex.Pattern
 
 import scala.collection.mutable
 import scala.io.Source
+import scala.tools.nsc.io.{ File, Directory }
 
 import com.excilys.ebi.gatling.charts.result.reader.FileDataReader.TABULATION_PATTERN
 import com.excilys.ebi.gatling.charts.util.StatisticsHelper
 import com.excilys.ebi.gatling.core.action.EndAction.END_OF_SCENARIO
 import com.excilys.ebi.gatling.core.action.StartAction.START_OF_SCENARIO
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
-import com.excilys.ebi.gatling.core.config.GatlingFiles.simulationLogFile
+import com.excilys.ebi.gatling.core.config.GatlingFiles.simulationLogDirectory
 import com.excilys.ebi.gatling.core.result.message.RecordType.{ RUN, ACTION }
 import com.excilys.ebi.gatling.core.result.message.RequestStatus.RequestStatus
 import com.excilys.ebi.gatling.core.result.message.{ RunRecord, RequestStatus }
@@ -37,6 +38,7 @@ import grizzled.slf4j.Logging
 
 object FileDataReader {
 	val TABULATION_PATTERN = Pattern.compile(TABULATION_SEPARATOR_STRING)
+	val SIMULATION_FILES_NAME_PATTERN = """.*\.log"""
 }
 
 class FileDataReader(runUuid: String) extends DataReader(runUuid) with Logging {
@@ -45,29 +47,38 @@ class FileDataReader(runUuid: String) extends DataReader(runUuid) with Logging {
 
 		val runRecords = new mutable.ArrayBuffer[RunRecord]
 		val requestRecords = new mutable.ArrayBuffer[ChartRequestRecord]
-		val requestNames = new mutable.HashMap[String, Long]
-		val scenarioNames = new mutable.HashMap[String, Long]
+		val requestNames = mutable.Map[String, Long]()
+		val scenarioNames = mutable.Map[String, Long]()
 
-		(for (line <- Source.fromFile(simulationLogFile(runUuid).jfile, configuration.encoding).getLines) yield TABULATION_PATTERN.split(line, 0))
-			.foreach {
-				case Array(RUN, runDate, runId, runDescription) =>
-					runRecords += RunRecord(parseTimestampString(runDate), runId.intern, runDescription.trim.intern)
-				case Array(ACTION, scenarioName, userId, requestName, executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate, resultStatus, resultMessage) =>
-					val executionStartDateLong = executionStartDate.toLong
-					requestRecords += ChartRequestRecord(scenarioName, userId.toInt, requestName, executionStartDateLong, executionEndDate.toLong, requestSendingEndDate.toLong, responseReceivingStartDate.toLong, RequestStatus.withName(resultStatus))
-					if (requestName != START_OF_SCENARIO && requestName != END_OF_SCENARIO) {
+		def readFile(file: File) {
+			(for (line <- Source.fromFile(file.jfile, configuration.encoding).getLines) yield TABULATION_PATTERN.split(line, 0).toList)
+				.foreach {
+					case RUN :: runDate :: runId :: runDescription :: l =>
+						runRecords += RunRecord(parseTimestampString(runDate), runId, runDescription)
+					case ACTION :: scenarioName :: userId :: requestName :: executionStartDate :: executionEndDate :: requestSendingEndDate :: responseReceivingStartDate :: resultStatus :: resultMessage :: l =>
+						val executionStartDateLong = executionStartDate.toLong
+						val record = ChartRequestRecord(scenarioName, userId.toInt, requestName, executionStartDateLong, executionEndDate.toLong, requestSendingEndDate.toLong, responseReceivingStartDate.toLong, RequestStatus.withName(resultStatus))
 
-						val entryTime = requestNames.getOrElse(requestName, Long.MaxValue)
-						if (executionStartDateLong < entryTime)
-							requestNames += (requestName -> executionStartDateLong)
-					}
+						if (record.responseTime >= 0) {
+							requestRecords += record
+							if (requestName != START_OF_SCENARIO && requestName != END_OF_SCENARIO) {
 
-					val entryTime = scenarioNames.getOrElse(scenarioName, Long.MaxValue)
-					if (executionStartDateLong < entryTime)
-						scenarioNames += (scenarioName -> executionStartDateLong)
+								val entryTime = requestNames.getOrElse(requestName, Long.MaxValue)
+								if (executionStartDateLong < entryTime)
+									requestNames += (record.requestName -> executionStartDateLong)
+							}
 
-				case record => logger.warn("Malformed line, skipping it : " + record.toList)
-			}
+							val entryTime = scenarioNames.getOrElse(scenarioName, Long.MaxValue)
+							if (executionStartDateLong < entryTime)
+								scenarioNames += (record.scenarioName -> executionStartDateLong)
+						} else
+							logger.info("Point is irrelevant, probably due to currentTimeMillis unprecision, skipping it" + record.requestName + " at " + record.executionStartDateNoMillis)
+
+					case record => logger.warn("Malformed line, skipping it : " + record)
+				}
+		}
+
+		simulationLogDirectory(runUuid).toDirectory.files.filter(_.jfile.getName.matches(FileDataReader.SIMULATION_FILES_NAME_PATTERN)).foreach(readFile(_))
 
 		val sortedRequestNames = requestNames.toSeq.sortBy(_._2).map(_._1)
 		val sortedScenarioNames = scenarioNames.toSeq.sortBy(_._2).map(_._1)

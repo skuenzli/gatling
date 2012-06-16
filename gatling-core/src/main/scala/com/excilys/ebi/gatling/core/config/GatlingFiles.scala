@@ -16,6 +16,7 @@
 package com.excilys.ebi.gatling.core.config
 
 import scala.tools.nsc.io.Path.string2path
+import scala.tools.nsc.io.{ Path, Directory }
 
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
 
@@ -30,18 +31,17 @@ object GatlingFiles {
 	val GATLING_ASSETS_STYLE_PACKAGE = GATLING_ASSETS_PACKAGE / GATLING_STYLE
 	val GATLING_IMPORTS_FILE = "imports.txt"
 
-	def dataFolder = configuration.dataFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / "data")
-	def resultsFolder = configuration.resultsFolderPath.getOrElse(GATLING_HOME / "results")
-	def requestBodiesFolder = configuration.requestBodiesFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / GATLING_REQUEST_BODIES)
-	def simulationsFolder = configuration.simulationsFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / "simulations")
+	def dataFolder: Path = configuration.dataFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / "data")
+	def resultsFolder: Path = configuration.resultsFolderPath.getOrElse(GATLING_HOME / "results")
+	def requestBodiesFolder: Path = configuration.requestBodiesFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / GATLING_REQUEST_BODIES)
+	def simulationsFolder: Path = configuration.simulationsFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / "simulations")
 
-	def resultFolder(runUuid: String) = resultsFolder / runUuid
-	def jsFolder(runUuid: String) = resultFolder(runUuid) / GATLING_JS
-	def styleFolder(runUuid: String) = resultFolder(runUuid) / GATLING_STYLE
-	def rawDataFolder(runUuid: String) = resultFolder(runUuid) / "rawdata"
-	def simulationLogFile(runUuid: String) = {
+	def resultFolder(runUuid: String): Path = resultsFolder / runUuid
+	def jsFolder(runUuid: String): Path = resultFolder(runUuid) / GATLING_JS
+	def styleFolder(runUuid: String): Path = resultFolder(runUuid) / GATLING_STYLE
+	def rawDataFolder(runUuid: String): Path = resultFolder(runUuid) / "rawdata"
+	def simulationLogDirectory(runUuid: String): Directory = {
 		val dir = resultFolder(runUuid)
 		dir.createDirectory()
-		dir / "simulation.log"
 	}
 }
