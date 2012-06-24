@@ -19,7 +19,7 @@ import com.excilys.ebi.gatling.core.session.EvaluatableString
 import com.excilys.ebi.gatling.core.session.Session
 import com.excilys.ebi.gatling.http.check.HttpCheck
 import com.excilys.ebi.gatling.http.request.HttpRequestBody
-import com.ning.http.client.Realm
+import com.ning.http.client.{ FilePart, Realm }
 
 /**
  * This class defines an HTTP request with word POST in the DSL
@@ -31,9 +31,9 @@ class PostHttpRequestBuilder(
 	params: List[HttpParam],
 	headers: Map[String, EvaluatableString],
 	body: Option[HttpRequestBody],
-	uploadedFile: Option[UploadedFile],
+	uploadedFile: Option[FilePart],
 	realm: Option[Session => Realm],
-	checks: List[HttpCheck])
+	checks: List[HttpCheck[_]])
 		extends AbstractHttpRequestWithBodyAndParamsBuilder[PostHttpRequestBuilder](requestName, "POST", url, queryParams, params, headers, body, uploadedFile, realm, checks) {
 
 	private[http] def newInstance(
@@ -42,9 +42,9 @@ class PostHttpRequestBuilder(
 		queryParams: List[HttpParam], params: List[HttpParam],
 		headers: Map[String, EvaluatableString],
 		body: Option[HttpRequestBody],
-		uploadedFile: Option[UploadedFile],
+		uploadedFile: Option[FilePart],
 		realm: Option[Session => Realm],
-		checks: List[HttpCheck]) = {
+		checks: List[HttpCheck[_]]) = {
 		new PostHttpRequestBuilder(requestName, url, queryParams, params, headers, body, uploadedFile, realm, checks)
 	}
 }

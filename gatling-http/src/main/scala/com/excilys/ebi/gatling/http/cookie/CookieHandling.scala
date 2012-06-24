@@ -21,43 +21,27 @@ import com.excilys.ebi.gatling.core.session.Session.GATLING_PRIVATE_ATTRIBUTE_PR
 import com.excilys.ebi.gatling.core.session.Session
 import com.ning.http.client.Cookie
 
-case class CookieKey(domain: String, path: String, name: String)
-
-trait CookieHandling {
+object CookieHandling {
 
 	val COOKIES_CONTEXT_KEY = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "http.cookies"
 
 	def getStoredCookies(session: Session, url: String): Iterable[Cookie] = {
-		session.getAttributeAsOption[Map[CookieKey, Cookie]](COOKIES_CONTEXT_KEY) match {
-			case Some(storedCookies) if (!storedCookies.isEmpty) =>
-				val uri = URI.create(url)
-				storedCookies
-					.filter { case (key, _) => uri.getHost.endsWith(key.domain) && uri.getPath.startsWith(key.path) }
-					.map { case (_, cookie) => cookie }
 
+		session.getAttributeAsOption[CookieStore](COOKIES_CONTEXT_KEY) match {
+			case Some(cookieStore) => {
+				val uri = URI.create(url)
+				cookieStore.get(uri)
+			}
 			case _ => Nil
 		}
 	}
 
-	def storeCookies(session: Session, uri: URI, cookies: Seq[Cookie]): Session = {
-
-		def newCookieKey(cookie: Cookie, uri: URI) = {
-			val cookieDomain = Option(cookie.getDomain).getOrElse(uri.getHost)
-			val cookiePath = Option(cookie.getPath).getOrElse(uri.getPath)
-			CookieKey(cookieDomain, cookiePath, cookie.getName)
-		}
-
+	def storeCookies(session: Session, uri: URI, cookies: Iterable[Cookie]): Session = {
 		if (!cookies.isEmpty) {
-			val storedCookies: Map[CookieKey, Cookie] = session.getAttributeAsOption(COOKIES_CONTEXT_KEY).getOrElse(Map.empty)
-
-			val (deletedCookies, nonDeletedCookies) = cookies.partition(_.getMaxAge == 0)
-
-			val deletedCookieKeys = deletedCookies.map(newCookieKey(_, uri))
-			val nonDeletedStoredCookies = storedCookies.filterKeys(!deletedCookieKeys.contains(_))
-
-			val newCookies = nonDeletedStoredCookies ++ nonDeletedCookies.map { cookie => newCookieKey(cookie, uri) -> cookie }
-
-			session.setAttribute(COOKIES_CONTEXT_KEY, newCookies)
+			session.getAttributeAsOption[CookieStore](COOKIES_CONTEXT_KEY) match {
+				case Some(cookieStore) => session.setAttribute(COOKIES_CONTEXT_KEY, cookieStore.add(uri, cookies))
+				case _ => session.setAttribute(COOKIES_CONTEXT_KEY, new CookieStore(Map(uri -> cookies.toList)))
+			}
 		} else
 			session
 	}

@@ -31,6 +31,7 @@ import com.excilys.ebi.gatling.http.Headers.{ Names => HeaderNames }
 import com.excilys.ebi.gatling.http.action.HttpRequestAction.HTTP_CLIENT
 import com.excilys.ebi.gatling.http.ahc.GatlingAsyncHandlerActor.{ REDIRECT_STATUS_CODES, REDIRECTED_REQUEST_NAME_PATTERN }
 import com.excilys.ebi.gatling.http.check.HttpCheck
+import com.excilys.ebi.gatling.http.config.{ HttpProtocolConfiguration, HttpConfig }
 import com.excilys.ebi.gatling.http.cookie.CookieHandling
 import com.excilys.ebi.gatling.http.request.HttpPhase.HttpPhase
 import com.excilys.ebi.gatling.http.request.HttpPhase
@@ -40,19 +41,18 @@ import com.ning.http.client.{ Response, RequestBuilder, Request, FluentStringsMa
 import akka.actor.{ ReceiveTimeout, ActorRef, Actor }
 import akka.util.duration.intToDurationInt
 import grizzled.slf4j.Logging
-import com.excilys.ebi.gatling.http.config.{ HttpProtocolConfiguration, HttpConfig }
 
 object GatlingAsyncHandlerActor {
 	val REDIRECTED_REQUEST_NAME_PATTERN = """(.+?) Redirect (\d+)""".r
 	val REDIRECT_STATUS_CODES = 301 to 303
 }
 
-class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], next: ActorRef,
+class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck[_]], next: ActorRef,
 	var requestName: String, var request: Request, followRedirect: Boolean,
 	protocolConfiguration: Option[HttpProtocolConfiguration],
 	gatlingConfiguration: GatlingConfiguration,
 	handlerFactory: HandlerFactory, responseBuilderFactory: ExtendedResponseBuilderFactory)
-		extends Actor with Logging with CookieHandling {
+		extends Actor with Logging {
 
 	var responseBuilder = responseBuilderFactory(session)
 	var executionStartDate = currentTimeMillis
@@ -95,12 +95,12 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 			executionEndDate = computeTimeFromNanos(nanos)
 			requestSendingEndDate = if (requestSendingEndDate != 0L) requestSendingEndDate else executionEndDate
 			responseReceivingStartDate = if (responseReceivingStartDate != 0L) responseReceivingStartDate else executionEndDate
-			logRequest(KO, errorMessage, extractExtraInfo())
+			logRequest(KO, Some(errorMessage))
 			executeNext(session)
 
 		case ReceiveTimeout =>
 			error("GatlingAsyncHandlerActor timed out")
-			logRequest(KO, "GatlingAsyncHandlerActor timed out", extractExtraInfo())
+			logRequest(KO, Some("GatlingAsyncHandlerActor timed out"))
 			executeNext(session)
 
 		case m => throw new IllegalArgumentException("Unknown message type " + m)
@@ -109,11 +109,11 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 	def resetTimeout = context.setReceiveTimeout(HttpConfig.GATLING_HTTP_CONFIG_REQUEST_TIMEOUT_IN_MS milliseconds)
 
 	private def logRequest(requestResult: RequestStatus,
-		requestMessage: String = "Request executed successfully",
-		extraInfo: List[String] = Nil) = {
+		requestMessage: Option[String] = None,
+		response: Option[Response] = None) = {
 		DataWriter.logRequest(session.scenarioName, session.userId, "Request " + requestName,
 			executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate,
-			requestResult, requestMessage, extraInfo)
+			requestResult, requestMessage, extractExtraInfo(response))
 	}
 
 	/**
@@ -145,13 +145,13 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 				this.executionEndDate = 0L
 			}
 
-			logRequest(OK, extraInfo = extractExtraInfo(response))
+			logRequest(OK, response = Some(response))
 
 			val redirectUrl = computeRedirectUrl(URLDecoder.decode(response.getHeader(HeaderNames.LOCATION), gatlingConfiguration.encoding), request.getUrl)
 
 			val requestBuilder = new RequestBuilder(request).setMethod("GET").setQueryParameters(null.asInstanceOf[FluentStringsMap]).setParameters(null.asInstanceOf[FluentStringsMap]).setUrl(redirectUrl)
 
-			for (cookie <- getStoredCookies(sessionWithUpdatedCookies, redirectUrl))
+			for (cookie <- CookieHandling.getStoredCookies(sessionWithUpdatedCookies, redirectUrl))
 				requestBuilder.addCookie(cookie)
 
 			val newRequest = requestBuilder.build
@@ -175,7 +175,7 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 
 			phases match {
 				case Nil =>
-					logRequest(OK, extraInfo = extractExtraInfo(response))
+					logRequest(OK, response = Some(response))
 					executeNext(session)
 
 				case phase :: otherPhases =>
@@ -189,7 +189,7 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 							else
 								warn(new StringBuilder().append("Check on request '").append(requestName).append("' failed : ").append(errorMessage))
 
-							logRequest(KO, errorMessage, extraInfo = extractExtraInfo(response))
+							logRequest(KO, Some(errorMessage), Some(response))
 							executeNext(newSession)
 
 						case _ => checkPhasesRec(newSession, otherPhases)
@@ -197,15 +197,13 @@ class GatlingAsyncHandlerActor(var session: Session, checks: List[HttpCheck], ne
 			}
 		}
 
-		val sessionWithUpdatedCookies = storeCookies(session, response.getUri, response.getCookies)
+		val sessionWithUpdatedCookies = CookieHandling.storeCookies(session, response.getUri, response.getCookies)
 
 		if (REDIRECT_STATUS_CODES.contains(response.getStatusCode) && followRedirect)
 			handleFollowRedirect(sessionWithUpdatedCookies)
 		else
 			checkPhasesRec(sessionWithUpdatedCookies, HttpPhase.phases)
 	}
-
-	private def extractExtraInfo(response: Response): List[String] = extractExtraInfo(Some(response))
 
 	/**
 	 * Extract extra info from both request and response.

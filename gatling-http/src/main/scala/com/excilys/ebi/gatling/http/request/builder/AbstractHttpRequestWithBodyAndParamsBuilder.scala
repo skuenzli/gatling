@@ -15,6 +15,8 @@
  */
 package com.excilys.ebi.gatling.http.request.builder
 
+import scala.collection.JavaConversions.asJavaCollection
+
 import com.excilys.ebi.gatling.core.Predef.stringToSessionFunction
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
 import com.excilys.ebi.gatling.core.session.EvaluatableString
@@ -24,7 +26,7 @@ import com.excilys.ebi.gatling.http.Headers.{ Values => HeaderValues, Names => H
 import com.excilys.ebi.gatling.http.check.HttpCheck
 import com.excilys.ebi.gatling.http.config.HttpProtocolConfiguration
 import com.excilys.ebi.gatling.http.request.HttpRequestBody
-import com.ning.http.client.{ StringPart, RequestBuilder, Realm, FluentStringsMap }
+import com.ning.http.client.{ StringPart, FilePart, RequestBuilder, Realm, FluentStringsMap }
 
 /**
  * This class serves as model to HTTP request with a body and parameters
@@ -45,9 +47,9 @@ abstract class AbstractHttpRequestWithBodyAndParamsBuilder[B <: AbstractHttpRequ
 	params: List[HttpParam],
 	headers: Map[String, EvaluatableString],
 	body: Option[HttpRequestBody],
-	uploadedFile: Option[UploadedFile],
+	uploadedFile: Option[FilePart],
 	realm: Option[Session => Realm],
-	checks: List[HttpCheck])
+	checks: List[HttpCheck[_]])
 		extends AbstractHttpRequestWithBodyBuilder[B](requestName, method, url, queryParams, headers, body, realm, checks) {
 
 	/**
@@ -68,9 +70,9 @@ abstract class AbstractHttpRequestWithBodyAndParamsBuilder[B <: AbstractHttpRequ
 		params: List[HttpParam],
 		headers: Map[String, EvaluatableString],
 		body: Option[HttpRequestBody],
-		uploadedFile: Option[UploadedFile],
+		uploadedFile: Option[FilePart],
 		realm: Option[Session => Realm],
-		checks: List[HttpCheck]): B
+		checks: List[HttpCheck[_]]): B
 
 	private[http] def newInstance(
 		requestName: String,
@@ -79,16 +81,16 @@ abstract class AbstractHttpRequestWithBodyAndParamsBuilder[B <: AbstractHttpRequ
 		headers: Map[String, EvaluatableString],
 		body: Option[HttpRequestBody],
 		realm: Option[Session => Realm],
-		checks: List[HttpCheck]): B = {
+		checks: List[HttpCheck[_]]): B = {
 		newInstance(requestName, url, queryParams, params, headers, body, uploadedFile, realm, checks)
 	}
 
 	protected override def getAHCRequestBuilder(session: Session, protocolConfiguration: Option[HttpProtocolConfiguration]): RequestBuilder = {
 		val requestBuilder = super.getAHCRequestBuilder(session, protocolConfiguration)
 		uploadedFile match {
-			case Some(fileName) =>
+			case Some(filePart) =>
 				configureStringParts(requestBuilder, session)
-				configureBodyPart(requestBuilder)
+				configureBodyPart(requestBuilder, filePart)
 			case None => configureParams(requestBuilder, session)
 		}
 
@@ -115,20 +117,21 @@ abstract class AbstractHttpRequestWithBodyAndParamsBuilder[B <: AbstractHttpRequ
 	 * @param session the session of the current scenario
 	 */
 	private def configureParams(requestBuilder: RequestBuilder, session: Session) {
-		val paramsMap = new FluentStringsMap
 
-		val resolvedParams = for ((key, value) <- params) yield (key(session), value(session))
+		if (!params.isEmpty) {
+			val paramsMap = new FluentStringsMap
 
-		resolvedParams.groupBy(_._1).foreach {
-			case (key, params) => paramsMap.add(key, params.map(_._2): _*)
-		}
+			params
+				.map { case (key, value) => (key(session), value(session)) }
+				.groupBy(_._1)
+				.foreach { case (key, params) => paramsMap.add(key, params.map(_._2)) }
 
-		if (!paramsMap.isEmpty) // AHC removes body if setParameters is called
 			requestBuilder.setParameters(paramsMap)
+		}
 	}
 
-	private def configureBodyPart(requestBuilder: RequestBuilder) {
-		uploadedFile.map(file => requestBuilder.addBodyPart(file.toFilePart))
+	private def configureBodyPart(requestBuilder: RequestBuilder, filePart: FilePart) {
+		requestBuilder.addBodyPart(filePart)
 	}
 
 	private def configureStringParts(requestBuilder: RequestBuilder, session: Session) {

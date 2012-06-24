@@ -15,13 +15,9 @@
  */
 package com.excilys.ebi.gatling.http.action
 
-import java.lang.System.currentTimeMillis
-
 import com.excilys.ebi.gatling.core.action.system
 import com.excilys.ebi.gatling.core.action.Action
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration
-import com.excilys.ebi.gatling.core.result.message.RequestStatus.KO
-import com.excilys.ebi.gatling.core.result.writer.DataWriter
 import com.excilys.ebi.gatling.core.session.Session
 import com.excilys.ebi.gatling.http.action.HttpRequestAction.HTTP_CLIENT
 import com.excilys.ebi.gatling.http.ahc.{ GatlingAsyncHandlerActor, GatlingAsyncHandler, HandlerFactory, ExtendedResponseBuilder }
@@ -92,8 +88,8 @@ object HttpRequestAction extends Logging {
  * @param checks the checks that will be performed on the response
  * @param protocolConfiguration the protocol specific configuration
  */
-class HttpRequestAction(requestName: String, next: ActorRef, requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck], protocolConfiguration: Option[HttpProtocolConfiguration], gatlingConfiguration: GatlingConfiguration)
-		extends Action with Logging with RefererHandling {
+class HttpRequestAction(requestName: String, next: ActorRef, requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck[_]], protocolConfiguration: Option[HttpProtocolConfiguration], gatlingConfiguration: GatlingConfiguration)
+		extends Action with Logging {
 
 	val handlerFactory: HandlerFactory = GatlingAsyncHandler.newHandlerFactory(checks)
 	val responseBuilderFactory = ExtendedResponseBuilder.newExtendedResponseBuilder(checks)
@@ -106,7 +102,7 @@ class HttpRequestAction(requestName: String, next: ActorRef, requestBuilder: Abs
 
 		try {
 			val request = requestBuilder.build(session, protocolConfiguration)
-			val newSession = storeReferer(request, session, protocolConfiguration)
+			val newSession = RefererHandling.storeReferer(request, session, protocolConfiguration)
 			val actor = context.actorOf(Props(new GatlingAsyncHandlerActor(newSession, checks, next, requestName, request, followRedirect, protocolConfiguration, gatlingConfiguration, handlerFactory, responseBuilderFactory)))
 			val ahcHandler = handlerFactory(requestName, actor)
 			client.executeRequest(request, ahcHandler)
@@ -114,10 +110,7 @@ class HttpRequestAction(requestName: String, next: ActorRef, requestBuilder: Abs
 		} catch {
 			case e => {
 				error("request " + requestName + " building crashed, skipping it", e)
-				val now = currentTimeMillis
-				DataWriter.logRequest(session.scenarioName, session.userId, "Request " + requestName, now, now, now, now, KO, e.getMessage)
 				next ! session
-				None
 			}
 		}
 	}

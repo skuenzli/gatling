@@ -33,8 +33,10 @@ object StatisticsHelper {
 	private def isRecordWithStatus(record: ChartRequestRecord, status: Option[RequestStatus]) = status.map(_ == record.requestStatus).getOrElse(true)
 	private def isRealRequest(record: ChartRequestRecord) = record.requestName != START_OF_SCENARIO && record.requestName != END_OF_SCENARIO
 	private def meanTime(timeFunction: ChartRequestRecord => Long)(data: Seq[ChartRequestRecord]): Long = if (data.isEmpty) NO_PLOT_MAGIC_VALUE else (data.map(timeFunction(_)).sum / data.length.toDouble).toLong
-	val meanResponseTime = meanTime(_.responseTime) _
-	val meanLatency = meanTime(_.latency) _
+	private def maxTime(timeFunction: ChartRequestRecord => Long)(data: Seq[ChartRequestRecord]): Long = if (data.isEmpty) NO_PLOT_MAGIC_VALUE else timeFunction(data.maxBy(timeFunction(_)))
+	private val meanResponseTime = meanTime(_.responseTime) _
+	private val maxResponseTime = meanTime(_.responseTime) _
+	private val maxLatency = maxTime(_.latency) _
 
 	/**
 	 * Compute the population standard deviation of the provided data.
@@ -46,13 +48,12 @@ object StatisticsHelper {
 		if (avg != NO_PLOT_MAGIC_VALUE) sqrt(data.map(result => pow(result.responseTime - avg, 2)).sum / data.length).toLong else NO_PLOT_MAGIC_VALUE
 	}
 
-	def respTimeAgainstNbOfReqPerSecond(requestsPerSecond: Map[Long, Int], requestData: Seq[(Long, Seq[ChartRequestRecord])], requestStatus: RequestStatus): List[(Int, Long)] = requestData
-		.map {
+	def respTimeAgainstNbOfReqPerSecond(requestsPerSecond: Map[Long, Int], requestData: Seq[(Long, Seq[ChartRequestRecord])], requestStatus: RequestStatus): Seq[(Int, Long)] = requestData
+		.flatMap {
 			case (time, results) => results
 				.filter(_.requestStatus == requestStatus)
 				.map(requestsPerSecond.get(time).get -> _.responseTime)
-		}.toList
-		.flatten
+		}
 
 	def count(data: Seq[(Long, Int)]) = data.foldLeft(0)((sum, entry) => sum + entry._2)
 
@@ -78,7 +79,7 @@ object StatisticsHelper {
 				set + record.executionStartDateNoMillis
 			else
 				set
-		}.toList.sortBy(date => date)
+		}.toList.sorted
 
 		@tailrec
 		def build(lastCount: Int, times: List[Long], counts: List[(Long, Int)]): List[(Long, Int)] = times match {
@@ -278,7 +279,7 @@ object StatisticsHelper {
 			.map { case (time, results) => time -> computation(results) }
 			.sortBy(_._1)
 
-	def responseTimeOverTime(data: Seq[(Long, Seq[ChartRequestRecord])], requestStatus: RequestStatus): Seq[(Long, Long)] = computationOverTime(data, requestStatus, meanResponseTime)
+	def responseTimeOverTime(data: Seq[(Long, Seq[ChartRequestRecord])], requestStatus: RequestStatus): Seq[(Long, Long)] = computationOverTime(data, requestStatus, maxResponseTime)
 
-	def latencyOverTime(data: Seq[(Long, Seq[ChartRequestRecord])], requestStatus: RequestStatus): Seq[(Long, Long)] = computationOverTime(data, requestStatus, meanLatency)
+	def latencyOverTime(data: Seq[(Long, Seq[ChartRequestRecord])], requestStatus: RequestStatus): Seq[(Long, Long)] = computationOverTime(data, requestStatus, maxLatency)
 }
