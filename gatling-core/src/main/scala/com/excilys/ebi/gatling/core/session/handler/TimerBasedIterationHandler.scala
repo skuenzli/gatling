@@ -15,11 +15,11 @@
  */
 package com.excilys.ebi.gatling.core.session.handler
 
-import java.lang.System.currentTimeMillis
-
-import com.excilys.ebi.gatling.core.session.Session.GATLING_PRIVATE_ATTRIBUTE_PREFIX
-import com.excilys.ebi.gatling.core.session.handler.TimerBasedIterationHandler.getTimerAttributeName
 import com.excilys.ebi.gatling.core.session.Session
+import com.excilys.ebi.gatling.core.session.Session.GATLING_PRIVATE_ATTRIBUTE_PREFIX
+import com.excilys.ebi.gatling.core.util.TimeHelper.nowMillis
+
+import scalaz._
 
 /**
  * TimerBasedIterationHandler trait 'companion'
@@ -29,9 +29,11 @@ object TimerBasedIterationHandler {
 	/**
 	 * Key prefix for Counters
 	 */
-	val TIMER_KEY_PREFIX = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "core.timer."
+	private val TIMER_KEY_PREFIX = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "core.timer."
 
-	def getTimerAttributeName(timerName: String) = TIMER_KEY_PREFIX + timerName
+	def getTimerAttributeName(counterName: String) = TIMER_KEY_PREFIX + counterName
+
+	def getTimer(session: Session, counterName: String): Validation[String, Long] = session.safeGetAs[Long](getTimerAttributeName(counterName))
 }
 
 /**
@@ -39,17 +41,17 @@ object TimerBasedIterationHandler {
  *
  * It adds timer based iteration behavior to a class
  */
-trait TimerBasedIterationHandler extends IterationHandler {
-
-	lazy val timerAttributeName = getTimerAttributeName(counterName)
+trait TimerBasedIterationHandler extends CounterBasedIterationHandler {
 
 	override def init(session: Session): Session = {
 
-		session.getAttributeAsOption[Int](timerAttributeName) match {
-			case None => super.init(session).setAttribute(timerAttributeName, currentTimeMillis)
-			case Some(_) => super.init(session)
-		}
+		val timerAttributeName = TimerBasedIterationHandler.getTimerAttributeName(counterName)
+
+		if (session.contains(timerAttributeName))
+			super.init(session)
+		else
+			super.init(session).set(timerAttributeName, nowMillis)
 	}
 
-	override def expire(session: Session) = super.expire(session).removeAttribute(TimerBasedIterationHandler.getTimerAttributeName(counterName))
+	override def expire(session: Session) = super.expire(session).remove(TimerBasedIterationHandler.getTimerAttributeName(counterName))
 }

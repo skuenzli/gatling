@@ -17,10 +17,10 @@ package com.excilys.ebi.gatling.charts.component
 
 import com.excilys.ebi.gatling.charts.config.ChartsFiles.GATLING_TEMPLATE_STATISTICS_COMPONENT_URL
 import com.excilys.ebi.gatling.charts.template.PageTemplate.TEMPLATE_ENGINE
-import com.excilys.ebi.gatling.charts.util.StatisticsHelper.NO_PLOT_MAGIC_VALUE
-import com.excilys.ebi.gatling.core.util.StringHelper.EMPTY
+import com.excilys.ebi.gatling.core.result.reader.DataReader.NO_PLOT_MAGIC_VALUE
+import com.excilys.ebi.gatling.core.util.FileHelper.TABULATION_SEPARATOR
 
-class Statistics(val name: String, val total: Long, val success: Long, val failure: Long) {
+case class Statistics(name: String, total: Long, success: Long, failure: Long) {
 
 	private def makePrintable(value: Long) = if (value != NO_PLOT_MAGIC_VALUE) value.toString else "-"
 
@@ -31,14 +31,65 @@ class Statistics(val name: String, val total: Long, val success: Long, val failu
 	def printableFailure: String = makePrintable(failure)
 }
 
-class StatisticsTextComponent(statistics: Statistics*) extends Component {
+case class RequestStatistics(name: String,
+	path: String,
+	numberOfRequestsStatistics: Statistics,
+	minResponseTimeStatistics: Statistics,
+	maxResponseTimeStatistics: Statistics,
+	meanStatistics: Statistics,
+	stdDeviationStatistics: Statistics,
+	percentiles1: Statistics,
+	percentiles2: Statistics,
+	groupedCounts: Seq[(String, Int, Int)],
+	meanNumberOfRequestsPerSecondStatistics: Statistics) {
 
-	def getHTMLContent: String = {
-		val statisticsIndexedByName = statistics.map(stats => (stats.name, stats)).toMap[String, Statistics]
-		TEMPLATE_ENGINE.layout(GATLING_TEMPLATE_STATISTICS_COMPONENT_URL, statisticsIndexedByName)
-	}
+	def mkString: String = new StringBuilder().append(path).append(TABULATION_SEPARATOR)
+		.append(numberOfRequestsStatistics.total).append(TABULATION_SEPARATOR)
+		.append(numberOfRequestsStatistics.success).append(TABULATION_SEPARATOR)
+		.append(numberOfRequestsStatistics.failure).append(TABULATION_SEPARATOR)
+		.append(minResponseTimeStatistics.total).append(TABULATION_SEPARATOR)
+		.append(minResponseTimeStatistics.success).append(TABULATION_SEPARATOR)
+		.append(minResponseTimeStatistics.failure).append(TABULATION_SEPARATOR)
+		.append(maxResponseTimeStatistics.total).append(TABULATION_SEPARATOR)
+		.append(maxResponseTimeStatistics.success).append(TABULATION_SEPARATOR)
+		.append(maxResponseTimeStatistics.failure).append(TABULATION_SEPARATOR)
+		.append(meanStatistics.total).append(TABULATION_SEPARATOR)
+		.append(meanStatistics.success).append(TABULATION_SEPARATOR)
+		.append(meanStatistics.failure).append(TABULATION_SEPARATOR)
+		.append(stdDeviationStatistics.total).append(TABULATION_SEPARATOR)
+		.append(stdDeviationStatistics.success).append(TABULATION_SEPARATOR)
+		.append(stdDeviationStatistics.failure).append(TABULATION_SEPARATOR)
+		.append(percentiles1.total).append(TABULATION_SEPARATOR)
+		.append(percentiles1.success).append(TABULATION_SEPARATOR)
+		.append(percentiles1.failure).append(TABULATION_SEPARATOR)
+		.append(percentiles2.total).append(TABULATION_SEPARATOR)
+		.append(percentiles2.success).append(TABULATION_SEPARATOR)
+		.append(percentiles2.failure).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(0)._1).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(0)._2).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(0)._3).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(1)._1).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(1)._2).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(1)._3).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(2)._1).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(2)._2).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(2)._3).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(3)._1).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(3)._2).append(TABULATION_SEPARATOR)
+		.append(groupedCounts(3)._3).append(TABULATION_SEPARATOR)
+		.append(meanNumberOfRequestsPerSecondStatistics.total).append(TABULATION_SEPARATOR)
+		.append(meanNumberOfRequestsPerSecondStatistics.success).append(TABULATION_SEPARATOR)
+		.append(meanNumberOfRequestsPerSecondStatistics.failure)
+		.toString
+}
 
-	val getJavascriptContent: String = EMPTY
+case class GroupStatistics(duration: Long)
+
+class StatisticsTextComponent extends Component {
+
+	def getHTMLContent: String = TEMPLATE_ENGINE.layout(GATLING_TEMPLATE_STATISTICS_COMPONENT_URL)
+
+	val getJavascriptContent: String = ""
 
 	val getJavascriptFiles: Seq[String] = Seq.empty
 }

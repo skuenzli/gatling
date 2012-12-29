@@ -17,21 +17,34 @@ package com.excilys.ebi.gatling.http.action
 
 import com.excilys.ebi.gatling.core.action.builder.ActionBuilder
 import com.excilys.ebi.gatling.core.action.system
-import com.excilys.ebi.gatling.core.config.{ ProtocolConfigurationRegistry, GatlingConfiguration }
-import com.excilys.ebi.gatling.http.check.status.HttpStatusCheckBuilder.status
+import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
+import com.excilys.ebi.gatling.core.session.Expression
 import com.excilys.ebi.gatling.http.check.HttpCheck
-import com.excilys.ebi.gatling.http.config.HttpProtocolConfiguration
+import com.excilys.ebi.gatling.http.check.status.HttpStatusCheckBuilder.status
 import com.excilys.ebi.gatling.http.request.HttpPhase.StatusReceived
 import com.excilys.ebi.gatling.http.request.builder.AbstractHttpRequestBuilder
 
-import akka.actor.{ Props, ActorRef }
+import akka.actor.{ ActorRef, Props }
+
+import scalaz._
+import Scalaz._
 
 object HttpRequestActionBuilder {
 
 	/**
 	 * This is the default HTTP check used to verify that the response status is 2XX
 	 */
-	val DEFAULT_HTTP_STATUS_CHECK = status.find.in(Session => 200 to 210).build
+	val DEFAULT_HTTP_STATUS_CHECK = status.find.in(Session => (200 to 210).success).build
+
+	def apply(requestName: Expression[String], requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck[_]]) = {
+
+		val resolvedChecks = checks
+			.find(_.phase == StatusReceived)
+			.map(_ => checks)
+			.getOrElse(HttpRequestActionBuilder.DEFAULT_HTTP_STATUS_CHECK :: checks)
+
+		new HttpRequestActionBuilder(requestName, requestBuilder, resolvedChecks, null)
+	}
 }
 
 /**
@@ -42,17 +55,9 @@ object HttpRequestActionBuilder {
  * @param next the next action to be executed
  * @param checks the checks to be applied on the response
  */
-class HttpRequestActionBuilder(requestName: String, requestBuilder: AbstractHttpRequestBuilder[_], next: ActorRef, checks: List[HttpCheck[_]]) extends ActionBuilder {
+class HttpRequestActionBuilder(requestName: Expression[String], requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck[_]], next: ActorRef) extends ActionBuilder {
 
-	private[gatling] def withNext(next: ActorRef) = new HttpRequestActionBuilder(requestName, requestBuilder, next, checks)
+	private[gatling] def withNext(next: ActorRef) = new HttpRequestActionBuilder(requestName, requestBuilder, checks, next)
 
-	private[gatling] val resolvedChecks = checks.find(_.phase == StatusReceived) match {
-		case None => HttpRequestActionBuilder.DEFAULT_HTTP_STATUS_CHECK :: checks
-		case _ => checks
-	}
-
-	private[gatling] def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry): ActorRef = {
-		val httpConfig = protocolConfigurationRegistry.getProtocolConfiguration(HttpProtocolConfiguration.HTTP_PROTOCOL_TYPE).map(_.asInstanceOf[HttpProtocolConfiguration])
-		system.actorOf(Props(new HttpRequestAction(requestName, next, requestBuilder, resolvedChecks, httpConfig, GatlingConfiguration.configuration)))
-	}
+	private[gatling] def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry): ActorRef = system.actorOf(Props(HttpRequestAction(requestName, next, requestBuilder, checks, protocolConfigurationRegistry)))
 }

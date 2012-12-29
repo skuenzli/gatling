@@ -13,26 +13,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.excilys.ebi.gatling.recorder.ui.frame;
+package com.excilys.ebi.gatling.recorder.ui.frame
 
-import java.awt.event.{ ItemListener, ItemEvent, ActionListener, ActionEvent }
-import java.awt.{ FlowLayout, FileDialog, Dimension, BorderLayout }
+import java.awt.{ BorderLayout, Dimension, FileDialog, FlowLayout }
+import java.awt.event.{ ActionEvent, ItemEvent }
 import java.nio.charset.Charset
 
-import scala.collection.JavaConversions.collectionAsScalaIterable
-import scala.collection.JavaConversions.seqAsJavaList
+import scala.collection.JavaConversions.{ collectionAsScalaIterable, seqAsJavaList }
 
 import com.excilys.ebi.gatling.recorder.config.Configuration
-import com.excilys.ebi.gatling.recorder.ui.Commons.iconList
-import com.excilys.ebi.gatling.recorder.ui.component.{ SaveConfigurationListener, FilterTable }
-import com.excilys.ebi.gatling.recorder.ui.enumeration.FilterStrategy
-import com.excilys.ebi.gatling.recorder.ui.frame.ValidationHelper.{ proxyHostValidator, nonEmptyValidator, intValidator }
+import com.excilys.ebi.gatling.recorder.config.Configuration.configuration
+import com.excilys.ebi.gatling.recorder.controller.RecorderController
 import com.excilys.ebi.gatling.recorder.ui.Commons
+import com.excilys.ebi.gatling.recorder.ui.Commons.iconList
+import com.excilys.ebi.gatling.recorder.ui.component.{ FilterTable, SaveConfigurationListener }
+import com.excilys.ebi.gatling.recorder.ui.enumeration.FilterStrategy
+import com.excilys.ebi.gatling.recorder.ui.frame.ValidationHelper.{ intValidator, nonEmptyValidator, proxyHostValidator }
+import com.excilys.ebi.gatling.recorder.ui.util.ScalaSwing
 
 import grizzled.slf4j.Logging
-import javax.swing.{ SwingConstants, JTextField, JPanel, JLabel, JFrame, JFileChooser, JComboBox, JCheckBox, JButton, BorderFactory }
+import javax.swing._
 
-class ConfigurationFrame extends JFrame with Logging {
+class ConfigurationFrame(controller: RecorderController) extends JFrame with ScalaSwing with Logging {
 
 	private val IS_MAC_OSX = System.getProperty("os.name").startsWith("Mac");
 
@@ -91,6 +93,8 @@ class ConfigurationFrame extends JFrame with Logging {
 	setListeners
 
 	setValidationListeners
+
+	populateItemsFromConfiguration(configuration)
 
 	private def initOutputDirectoryChooser {
 
@@ -264,66 +268,50 @@ class ConfigurationFrame extends JFrame with Logging {
 
 	private def setListeners {
 		// Enables or disables filter edition depending on the selected strategy
-		cbFilterStrategies.addItemListener(new ItemListener {
-			def itemStateChanged(e: ItemEvent) {
-				if (e.getStateChange == ItemEvent.SELECTED && e.getItem == FilterStrategy.NONE) {
-					tblFilters.setEnabled(false)
-					tblFilters.setFocusable(false)
-				} else {
-					tblFilters.setEnabled(true)
-					tblFilters.setFocusable(true)
-				}
+		cbFilterStrategies.addItemListener { e: ItemEvent =>
+			if (e.getStateChange == ItemEvent.SELECTED && e.getItem == FilterStrategy.NONE) {
+				tblFilters.setEnabled(false)
+				tblFilters.setFocusable(false)
+			} else {
+				tblFilters.setEnabled(true)
+				tblFilters.setFocusable(true)
 			}
-		})
+		}
 
 		// Adds a filter row when + button clicked
-		btnFiltersAdd.addActionListener(new ActionListener {
-			def actionPerformed(e: ActionEvent) {
-				tblFilters.addRow
-			}
-		})
+		btnFiltersAdd.addActionListener { e: ActionEvent => tblFilters.addRow }
 
 		// Removes selected filter when - button clicked
-		btnFiltersDel.addActionListener(new ActionListener {
-			def actionPerformed(e: ActionEvent) {
-				tblFilters.removeSelectedRow
-			}
-		})
+		btnFiltersDel.addActionListener { e: ActionEvent => tblFilters.removeSelectedRow }
 
 		// Removes all filters when clear button clicked
-		btnClear.addActionListener(new ActionListener {
-			def actionPerformed(e: ActionEvent) {
-				tblFilters.removeAllElements
-			}
-		})
+		btnClear.addActionListener { e: ActionEvent => tblFilters.removeAllElements }
 
 		// Opens a save dialog when Browse button clicked
-		btnOutputFolder.addActionListener(new ActionListener {
-			def actionPerformed(e: ActionEvent) {
+		btnOutputFolder.addActionListener { e: ActionEvent =>
 
-				var chosenDirPath: String = null
+			var chosenDirPath: String = null
 
-				if (IS_MAC_OSX) {
-					fileDialog.setVisible(true)
+			if (IS_MAC_OSX) {
+				fileDialog.setVisible(true)
 
-					if (fileDialog.getDirectory == null)
-						return
+				if (fileDialog.getDirectory == null)
+					return
 
-					chosenDirPath = fileDialog.getDirectory + fileDialog.getFile
+				chosenDirPath = fileDialog.getDirectory + fileDialog.getFile
 
-				} else {
-					if (fileChooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION)
-						return
+			} else {
+				if (fileChooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION)
+					return
 
-					chosenDirPath = fileChooser.getSelectedFile.getPath
-				}
-
-				txtOutputFolder.setText(chosenDirPath)
+				chosenDirPath = fileChooser.getSelectedFile.getPath
 			}
-		})
+
+			txtOutputFolder.setText(chosenDirPath)
+		}
 
 		// Validates form when Start button clicked
-		btnStart.addActionListener(new SaveConfigurationListener(this))
+		btnStart.addActionListener(new SaveConfigurationListener(controller, this))
 	}
 
 	private def setValidationListeners {
@@ -351,7 +339,7 @@ class ConfigurationFrame extends JFrame with Logging {
 			txtProxyUsername.setEnabled(true)
 			txtProxyPassword.setEnabled(true)
 		}
-		configuration.simulationPackage.map(txtSimulationPackage.setText(_))
+		configuration.simulationPackage.map(txtSimulationPackage.setText)
 		txtSimulationClassName.setText(configuration.simulationClassName)
 		cbFilterStrategies.setSelectedItem(configuration.filterStrategy)
 		chkFollowRedirect.setSelected(configuration.followRedirect)

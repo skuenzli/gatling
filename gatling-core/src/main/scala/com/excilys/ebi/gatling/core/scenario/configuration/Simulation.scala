@@ -15,4 +15,25 @@
  */
 package com.excilys.ebi.gatling.core.scenario.configuration
 
-abstract class Simulation extends (() => Seq[ScenarioConfigurationBuilder])
+import scala.collection.mutable
+import com.excilys.ebi.gatling.core.scenario.Scenario
+import com.excilys.ebi.gatling.core.structure.{ Assertion, Metric }
+
+trait Simulation {
+
+	private val _scenarios = new mutable.ArrayBuffer[ConfiguredScenarioBuilder]
+
+	def scenarios: Seq[Scenario] = _scenarios.map(_.build)
+
+	def setUp(scn1: ConfiguredScenarioBuilder, scns: ConfiguredScenarioBuilder*) {
+		_scenarios += scn1 ++= scns
+	}
+
+	private val _assertions = new mutable.ArrayBuffer[Assertion]
+
+	def assertions: Seq[Assertion] = _assertions
+
+	def assertThat(metric1: Metric, metrics: Metric*) {
+		_assertions ++= metric1.assertions ++= metrics.flatMap(_.assertions)
+	}
+}

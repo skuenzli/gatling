@@ -15,20 +15,20 @@
  */
 package com.excilys.ebi.gatling.http.ahc
 
-import java.lang.Void
-
 import com.excilys.ebi.gatling.http.check.HttpCheck
-import com.excilys.ebi.gatling.http.request.HttpPhase.{ CompletePageReceived, BodyPartReceived }
+import com.excilys.ebi.gatling.http.config.HttpProtocolConfiguration
+import com.excilys.ebi.gatling.http.request.HttpPhase.{ BodyPartReceived, CompletePageReceived }
+import com.ning.http.client.{ HttpResponseBodyPart, HttpResponseHeaders, HttpResponseStatus, ProgressAsyncHandler }
+import com.ning.http.client.AsyncHandler
 import com.ning.http.client.AsyncHandler.STATE.CONTINUE
-import com.ning.http.client.{ HttpResponseStatus, HttpResponseHeaders, HttpResponseBodyPart, AsyncHandler, ProgressAsyncHandler }
 
 import akka.actor.ActorRef
 import grizzled.slf4j.Logging
 
 object GatlingAsyncHandler {
 
-	def newHandlerFactory(checks: List[HttpCheck[_]]): HandlerFactory = {
-		val useBodyParts = checks.exists(check => check.phase == BodyPartReceived || check.phase == CompletePageReceived)
+	def newHandlerFactory(checks: List[HttpCheck[_]], protocolConfiguration: HttpProtocolConfiguration): HandlerFactory = {
+		val useBodyParts = !protocolConfiguration.responseChunksDiscardingEnabled || checks.exists(check => check.phase == BodyPartReceived || check.phase == CompletePageReceived)
 		(requestName: String, actor: ActorRef) => new GatlingAsyncHandler(requestName, actor, useBodyParts)
 	}
 }
@@ -43,8 +43,7 @@ object GatlingAsyncHandler {
  * @param actor the actor that will perform the logic outside of the IO thread
  * @param useBodyParts id body parts should be sent to the actor
  */
-class GatlingAsyncHandler(requestName: String, actor: ActorRef, useBodyParts: Boolean)
-		extends AsyncHandler[Void] with ProgressAsyncHandler[Void] with Logging {
+class GatlingAsyncHandler(requestName: String, actor: ActorRef, useBodyParts: Boolean) extends AsyncHandler[Unit] with ProgressAsyncHandler[Unit] with Logging {
 
 	def onHeaderWriteCompleted = {
 		actor ! new OnHeaderWriteCompleted
@@ -73,9 +72,8 @@ class GatlingAsyncHandler(requestName: String, actor: ActorRef, useBodyParts: Bo
 		CONTINUE
 	}
 
-	def onCompleted: Void = {
+	def onCompleted {
 		actor ! new OnCompleted
-		null
 	}
 
 	def onThrowable(throwable: Throwable) {

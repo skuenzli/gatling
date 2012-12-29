@@ -13,17 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.excilys.ebi.gatling.recorder.ui.component;
+package com.excilys.ebi.gatling.recorder.ui.component
 
-import java.awt.event.{ MouseListener, MouseEvent, MouseAdapter, ActionListener, ActionEvent }
 import java.awt.{ Dimension, Component, Color, BorderLayout }
+import java.awt.event.{ MouseListener, MouseEvent, MouseAdapter, ActionListener, ActionEvent }
 
 import com.excilys.ebi.gatling.recorder.config.Pattern
 import com.excilys.ebi.gatling.recorder.ui.enumeration.PatternType.{ PatternType, JAVA, ANT }
 
 import grizzled.slf4j.Logging
-import javax.swing.table.{ TableCellRenderer, TableCellEditor, DefaultTableModel }
 import javax.swing.{ JTable, JScrollPane, JRadioButton, JPopupMenu, JPanel, JMenuItem, ButtonGroup, AbstractCellEditor }
+import javax.swing.table.{ TableCellRenderer, TableCellEditor, DefaultTableModel }
 
 class FilterTable extends JPanel with MouseListener {
 
@@ -63,9 +63,7 @@ class FilterTable extends JPanel with MouseListener {
 	}
 
 	def removeRows(toRemove: List[Int]) {
-		toRemove.sorted.reverse.foreach {
-			model.removeRow(_)
-		}
+		toRemove.sorted.reverse.foreach(model.removeRow)
 	}
 
 	def stopCellEditing {
@@ -135,20 +133,15 @@ class FilterTable extends JPanel with MouseListener {
 		})
 	}
 
-	@Override
-	def mouseReleased(e: MouseEvent) {}
+	override def mouseReleased(e: MouseEvent) {}
 
-	@Override
-	def mousePressed(e: MouseEvent) {}
+	override def mousePressed(e: MouseEvent) {}
 
-	@Override
-	def mouseExited(e: MouseEvent) {}
+	override def mouseExited(e: MouseEvent) {}
 
-	@Override
-	def mouseEntered(e: MouseEvent) {}
+	override def mouseEntered(e: MouseEvent) {}
 
-	@Override
-	def mouseClicked(e: MouseEvent) {
+	override def mouseClicked(e: MouseEvent) {
 		stopCellEditing
 	}
 }

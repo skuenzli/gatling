@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 package com.excilys.ebi.gatling.redis
-import com.excilys.ebi.gatling.redis.feeder.RedisFeederBuilder
+
+import com.excilys.ebi.gatling.redis.feeder.RedisFeeder
 import com.redis.RedisClientPool
 
 object Predef {
-	def redisFeeder(clients: RedisClientPool, key: String) = RedisFeederBuilder.redisFeeder(clients, key)
+	def redisFeeder(clients: RedisClientPool, key: String) = RedisFeeder(clients, key)
 }

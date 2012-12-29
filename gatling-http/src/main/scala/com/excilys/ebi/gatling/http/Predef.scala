@@ -15,35 +15,49 @@
  */
 package com.excilys.ebi.gatling.http
 
-import com.excilys.ebi.gatling.core.session.EvaluatableString
-import com.excilys.ebi.gatling.http.check.bodypart.HttpBodyPartCheckBuilder
-import com.excilys.ebi.gatling.http.check.body.{ HttpBodyXPathCheckBuilder, HttpBodyRegexCheckBuilder, HttpBodyJsonPathCheckBuilder, HttpBodyCssCheckBuilder }
+import com.excilys.ebi.gatling.core.session.Expression
+import com.excilys.ebi.gatling.http.check.after.HttpBodyResponseTimeCheckBuilder
+import com.excilys.ebi.gatling.http.check.body.{ HttpBodyCssCheckBuilder, HttpBodyJsonPathCheckBuilder, HttpBodyRegexCheckBuilder, HttpBodyStringCheckBuilder, HttpBodyXPathCheckBuilder }
+import com.excilys.ebi.gatling.http.check.bodypart.HttpChecksumCheckBuilder
 import com.excilys.ebi.gatling.http.check.header.{ HttpHeaderCheckBuilder, HttpHeaderRegexCheckBuilder }
-import com.excilys.ebi.gatling.http.check.status.HttpStatusCheckBuilder
-import com.excilys.ebi.gatling.http.config.{ HttpProxyBuilder, HttpProtocolConfigurationBuilder, HttpProtocolConfiguration }
-import com.excilys.ebi.gatling.http.request.builder.HttpRequestBaseBuilder
-import com.ning.http.client.{ Response, Request }
+import com.excilys.ebi.gatling.http.check.status.{ CurrentLocationCheckBuilder, HttpStatusCheckBuilder }
+import com.excilys.ebi.gatling.http.config.{ HttpProtocolConfiguration, HttpProtocolConfigurationBuilder, HttpProxyBuilder }
+import com.excilys.ebi.gatling.http.request.builder.{ AbstractHttpRequestBuilder, HttpRequestBaseBuilder }
+import com.excilys.ebi.gatling.http.response.ExtendedResponse
+import com.excilys.ebi.gatling.http.action.HttpRequestActionBuilder
 
 object Predef {
+	type Request = com.ning.http.client.Request
+	type Response = com.ning.http.client.Response
+	type ExtendedResponse = com.excilys.ebi.gatling.http.response.ExtendedResponse
 
-	def http(requestName: String) = HttpRequestBaseBuilder.http(requestName)
+	implicit def proxyBuilder2HttpProtocolConfigurationBuilder(hpb: HttpProxyBuilder): HttpProtocolConfigurationBuilder = hpb.toHttpProtocolConfigurationBuilder
+	implicit def proxyBuilder2HttpProtocolConfiguration(hpb: HttpProxyBuilder): HttpProtocolConfiguration = hpb.toHttpProtocolConfigurationBuilder.build
+	implicit def httpProtocolConfigurationBuilder2HttpProtocolConfiguration(builder: HttpProtocolConfigurationBuilder): HttpProtocolConfiguration = builder.build
+	implicit def requestBuilder2ActionBuilder(requestBuilder: AbstractHttpRequestBuilder[_]): HttpRequestActionBuilder = requestBuilder.toActionBuilder
 
+	def http(requestName: Expression[String]) = HttpRequestBaseBuilder.http(requestName)
 	def httpConfig = HttpProtocolConfigurationBuilder.httpConfig
-	implicit def toHttpProtocolConfigurationBuilder(hpb: HttpProxyBuilder): HttpProtocolConfigurationBuilder = HttpProxyBuilder.toHttpProtocolConfigurationBuilder(hpb)
-	implicit def toHttpProtocolConfiguration(hpb: HttpProxyBuilder): HttpProtocolConfiguration = HttpProxyBuilder.toHttpProtocolConfigurationBuilder(hpb)
-	implicit def toHttpProtocolConfiguration(builder: HttpProtocolConfigurationBuilder): HttpProtocolConfiguration = HttpProtocolConfigurationBuilder.toHttpProtocolConfiguration(builder)
-
-	def regex(pattern: EvaluatableString) = HttpBodyRegexCheckBuilder.regex(pattern)
-	def xpath(expression: EvaluatableString, namespaces: List[(String, String)] = Nil) = HttpBodyXPathCheckBuilder.xpath(expression, namespaces)
-	def css(selector: EvaluatableString) = HttpBodyCssCheckBuilder.css(selector)
-	def jsonPath(expression: EvaluatableString) = HttpBodyJsonPathCheckBuilder.jsonPath(expression)
-	def header(headerName: EvaluatableString) = HttpHeaderCheckBuilder.header(headerName)
-	def headerRegex(headerName: EvaluatableString, pattern: EvaluatableString) = HttpHeaderRegexCheckBuilder.headerRegex(headerName, pattern)
+	def regex(pattern: Expression[String]) = HttpBodyRegexCheckBuilder.regex(pattern)
+	def xpath(expression: Expression[String], namespaces: List[(String, String)] = Nil) = HttpBodyXPathCheckBuilder.xpath(expression, namespaces)
+	def css(selector: Expression[String]) = HttpBodyCssCheckBuilder.css(selector, None)
+	def css(selector: Expression[String], nodeAttribute: String) = HttpBodyCssCheckBuilder.css(selector, Some(nodeAttribute))
+	def jsonPath(expression: Expression[String]) = HttpBodyJsonPathCheckBuilder.jsonPath(expression)
+	def bodyString = HttpBodyStringCheckBuilder.bodyString
+	def header(headerName: Expression[String]) = HttpHeaderCheckBuilder.header(headerName)
+	def headerRegex(headerName: Expression[String], pattern: Expression[String]) = HttpHeaderRegexCheckBuilder.headerRegex(headerName, pattern)
 	def status = HttpStatusCheckBuilder.status
-	def md5 = HttpBodyPartCheckBuilder.checksum("MD5")
-	def sha1 = HttpBodyPartCheckBuilder.checksum("SHA-1")
+	def currentLocation = CurrentLocationCheckBuilder.currentLocation
+	def md5 = HttpChecksumCheckBuilder.md5
+	def sha1 = HttpChecksumCheckBuilder.sha1
+	def responseTimeInMillis = HttpBodyResponseTimeCheckBuilder.responseTimeInMillis
+	def latencyInMillis = HttpBodyResponseTimeCheckBuilder.latencyInMillis
 
-	val requestUrl = (request: Request) => List(request.getUrl())
-	val requestRawUrl = (request: Request) => List(request.getRawUrl())
-	val responseStatusCode = (response: Response) => List(response.getStatusCode.toString)
+	val requestUrl = (request: Request) => List(request.getUrl)
+	val requestRawUrl = (request: Request) => List(request.getRawUrl)
+	val responseStatusCode = (response: ExtendedResponse) => List(response.getStatusCode.toString)
+	val responseStatusText = (response: ExtendedResponse) => List(response.getStatusText)
+	val responseContentType = (response: ExtendedResponse) => List(response.getContentType)
+	val responseContentLength = (response: ExtendedResponse) => List(response.getHeader(Headers.Names.CONTENT_LENGTH))
+	val responseUri = (response: ExtendedResponse) => List(response.getUri.toString)
 }

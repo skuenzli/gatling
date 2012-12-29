@@ -15,48 +15,80 @@
  */
 package com.excilys.ebi.gatling.http.util
 
-import java.net.URI
+import java.net.{ URI, URLDecoder }
 
-import com.excilys.ebi.gatling.core.util.StringHelper.END_OF_LINE
-import com.ning.http.client.Response
+import scala.collection.JavaConversions.seqAsJavaList
+import scala.io.Codec.UTF8
+
+import com.excilys.ebi.gatling.core.session.Session
+import com.excilys.ebi.gatling.http.request.builder.HttpParam
+import com.ning.http.client.FluentStringsMap
+
+import scalaz._
+import Scalaz._
 
 object HttpHelper {
 
-	implicit def toRichResponse(response: Response) = new RichResponse(response)
-
 	def computeRedirectUrl(locationHeader: String, originalRequestUrl: String) = {
-		if (locationHeader.startsWith("http"))
+		if (locationHeader.startsWith("http")) // as of the RFC, Location should be an absolute uri
 			locationHeader
 		else {
+			// sadly, internet is a mess
+			val (locationPathPart, locationQueryPart) = locationHeader.indexOf('?') match {
+				case -1 => (locationHeader, null)
+				case queryMarkIndex => (locationHeader.substring(0, queryMarkIndex), locationHeader.substring(queryMarkIndex + 1))
+			}
+
 			val originalRequestURI = new URI(originalRequestUrl)
 			val originalRequestPath = originalRequestURI.getPath
-			val newPath = if (locationHeader.charAt(0) == '/')
-				locationHeader
+
+			val absolutePath = if (locationPathPart.startsWith("/"))
+				locationPathPart
 			else {
-				val index = originalRequestPath.lastIndexOf('/')
-				if (index == -1)
-					"/" + locationHeader
-				else
-					originalRequestPath.substring(0, index + 1) + locationHeader
+				originalRequestPath.lastIndexOf('/') match {
+					case -1 => "/" + locationPathPart
+					case lastSlashIndex => originalRequestPath.substring(0, lastSlashIndex + 1) + locationPathPart
+				}
 			}
-			new URI(originalRequestURI.getScheme, null, originalRequestURI.getHost, originalRequestURI.getPort, newPath, null, null).toString
+
+			new URI(originalRequestURI.getScheme, null, originalRequestURI.getHost, originalRequestURI.getPort, absolutePath, locationQueryPart, null).toString
 		}
 	}
-}
 
-class RichResponse(response: Response) {
+	def parseFormBody(body: String): List[(String, String)] = {
+		def utf8Decode(s: String) = URLDecoder.decode(s, UTF8.name)
 
-	def dump: StringBuilder = {
-		val buff = new StringBuilder().append(END_OF_LINE)
-		if (response.hasResponseStatus)
-			buff.append("status=").append(END_OF_LINE).append(response.getStatusCode()).append(" ").append(response.getStatusText()).append(END_OF_LINE)
+		body
+			.split("&")
+			.map(_.split("=", 2))
+			.map { pair =>
+				val paramName = utf8Decode(pair(0))
+				val paramValue = if (pair.isDefinedAt(1)) utf8Decode(pair(1)) else ""
+				paramName -> paramValue
+			}.toList
+	}
 
-		if (response.hasResponseHeaders)
-			buff.append("headers= ").append(END_OF_LINE).append(response.getHeaders()).append(END_OF_LINE)
+	def httpParamsToFluentMap(params: List[HttpParam], session: Session): Validation[String, FluentStringsMap] = {
 
-		if (response.hasResponseBody)
-			buff.append("body=").append(END_OF_LINE).append(response.getResponseBody())
+		def httpParamsToFluentMap(params: List[(String, Seq[String])]): FluentStringsMap =
+			params.groupBy(_._1)
+				.mapValues(_.map(_._2).flatten)
+				.foldLeft(new FluentStringsMap) { (map, keyValues) =>
+					val (key, values) = keyValues
+					map.add(key, values)
+				}
 
-		buff
+		val validations = params
+			.map {
+				case (key, values) =>
+					for {
+						resolvedKey <- key(session)
+						resolvedValues <- values(session)
+					} yield (resolvedKey, resolvedValues)
+			}
+
+		val validation = validations.sequence[({ type l[a] = Validation[String, a] })#l, (String, Seq[String])]
+
+		validation.map(httpParamsToFluentMap)
 	}
 }

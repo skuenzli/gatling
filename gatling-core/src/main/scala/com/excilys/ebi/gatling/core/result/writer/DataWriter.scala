@@ -15,50 +15,66 @@
  */
 package com.excilys.ebi.gatling.core.result.writer
 
-import java.util.concurrent.CountDownLatch
-import java.lang.System.currentTimeMillis
-
-import com.excilys.ebi.gatling.core.action.EndAction.END_OF_SCENARIO
-import com.excilys.ebi.gatling.core.action.StartAction.START_OF_SCENARIO
-import com.excilys.ebi.gatling.core.action.system
+import com.excilys.ebi.gatling.core.action.{ BaseActor, system }
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
-import com.excilys.ebi.gatling.core.result.message.RequestStatus.OK
-import com.excilys.ebi.gatling.core.result.message.{ RunRecord, RequestStatus, RequestRecord, InitializeDataWriter, FlushDataWriter }
+import com.excilys.ebi.gatling.core.result.message.{ Flush, GroupRecord, Init }
+import com.excilys.ebi.gatling.core.result.message.{ RequestRecord, RequestStatus, RunRecord, ScenarioRecord, ShortScenarioDescription }
+import com.excilys.ebi.gatling.core.result.message.RecordEvent.{ END, START }
+import com.excilys.ebi.gatling.core.result.terminator.Terminator
+import com.excilys.ebi.gatling.core.scenario.Scenario
+import com.excilys.ebi.gatling.core.util.TimeHelper.nowMillis
 
-import akka.actor.{ Props, ActorRef, Actor }
+import akka.actor.{ Actor, ActorRef, Props }
+import akka.routing.BroadcastRouter
 
 object DataWriter {
 
-	private val dataWriter: ActorRef = system.actorOf(Props(configuration.dataWriterClass))
-	private val console: ActorRef = system.actorOf(Props(classOf[ConsoleDataWriter]))
-
-	private def dispatch(message: Any) {
-		dataWriter ! message
-		console ! message
+	private val dataWriters: Seq[ActorRef] = configuration.data.dataWriterClasses.map { className =>
+		val clazz = Class.forName(className).asInstanceOf[Class[Actor]]
+		system.actorOf(Props(clazz))
 	}
 
-	def init(runRecord: RunRecord, totalUsersCount: Int, latch: CountDownLatch, encoding: String) = dispatch(InitializeDataWriter(runRecord, totalUsersCount, latch, encoding))
+	private val router = system.actorOf(Props[Actor].withRouter(BroadcastRouter(routees = dataWriters)))
 
-	def startUser(scenarioName: String, userId: Int) = {
-		val time = currentTimeMillis
-		dispatch(RequestRecord(scenarioName, userId, START_OF_SCENARIO, time, time, time, time, OK))
+	def init(runRecord: RunRecord, scenarios: Seq[Scenario]) = {
+		val shortScenarioDescriptions = scenarios.map(scenario => ShortScenarioDescription(scenario.name, scenario.configuration.users))
+		router ! Init(runRecord, shortScenarioDescriptions)
 	}
 
-	def endUser(scenarioName: String, userId: Int) = {
-		val time = currentTimeMillis
-		dispatch(RequestRecord(scenarioName, userId, END_OF_SCENARIO, time, time, time, time, OK))
+	def user(scenarioName: String, userId: Int, event: String) = {
+		val time = nowMillis
+		router ! ScenarioRecord(scenarioName, userId, event, time)
 	}
 
-	def askFlush = dispatch(FlushDataWriter)
+	def group(scenarioName: String, groupName: String, userId: Int, event: String) {
+		val time = nowMillis
+		router ! GroupRecord(scenarioName, groupName, userId, event, time)
+	}
 
-  def logRequest(scenarioName: String, userId: Int, requestName: String,
-                 executionStartDate: Long, executionEndDate: Long, requestSendingEndDate: Long, responseReceivingStartDate: Long,
-                 requestResult: RequestStatus.RequestStatus, requestMessage: Option[String] = None, extraInfo: List[String] = Nil) = {
+	def logRequest(
+		scenarioName: String,
+		userId: Int,
+		requestName: String,
+		executionStartDate: Long,
+		requestSendingEndDate: Long,
+		responseReceivingStartDate: Long,
+		executionEndDate: Long,
+		requestResult: RequestStatus,
+		requestMessage: Option[String] = None,
+		extraInfo: List[String] = Nil) = {
 
-    dispatch(RequestRecord(scenarioName, userId, requestName,
-      executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate,
-      requestResult, requestMessage, extraInfo))
-  }
+		router ! RequestRecord(
+			scenarioName,
+			userId,
+			requestName,
+			executionStartDate,
+			requestSendingEndDate,
+			responseReceivingStartDate,
+			executionEndDate,
+			requestResult,
+			requestMessage,
+			extraInfo)
+	}
 }
 
 /**
@@ -67,4 +83,41 @@ object DataWriter {
  * These writers are responsible for writing the logs that will be read to
  * generate the statistics
  */
-abstract class DataWriter extends Actor
+trait DataWriter extends BaseActor {
+
+	def onInitializeDataWriter(runRecord: RunRecord, scenarios: Seq[ShortScenarioDescription])
+
+	def onScenarioRecord(scenarioRecord: ScenarioRecord)
+
+	def onGroupRecord(groupRecord: GroupRecord)
+
+	def onRequestRecord(requestRecord: RequestRecord)
+
+	def onFlushDataWriter
+
+	def uninitialized: Receive = {
+		case Init(runRecord, scenarios) =>
+
+			Terminator.registerDataWriter(self)
+			onInitializeDataWriter(runRecord, scenarios)
+			context.become(initialized)
+	}
+
+	def initialized: Receive = {
+		case scenarioRecord: ScenarioRecord => onScenarioRecord(scenarioRecord)
+
+		case groupRecord: GroupRecord => onGroupRecord(groupRecord)
+
+		case requestRecord: RequestRecord => onRequestRecord(requestRecord)
+
+		case Flush =>
+			try {
+				onFlushDataWriter
+			} finally {
+				context.unbecome
+				sender ! true
+			}
+	}
+
+	def receive = uninitialized
+}

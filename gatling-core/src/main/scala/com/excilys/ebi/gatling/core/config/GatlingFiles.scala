@@ -15,33 +15,41 @@
  */
 package com.excilys.ebi.gatling.core.config
 
-import scala.tools.nsc.io.Path.string2path
 import scala.tools.nsc.io.{ Path, Directory }
+import scala.tools.nsc.io.Path.string2path
 
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
 
 object GatlingFiles {
 	val GATLING_HOME = Option(System.getenv("GATLING_HOME")).getOrElse(".")
-	val GATLING_USER_FILES_FOLDER = GATLING_HOME / "user-files"
 	val GATLING_ASSETS_PACKAGE = "assets"
 	val GATLING_JS = "js"
 	val GATLING_STYLE = "style"
-	val GATLING_REQUEST_BODIES = "request-bodies"
 	val GATLING_ASSETS_JS_PACKAGE = GATLING_ASSETS_PACKAGE / GATLING_JS
 	val GATLING_ASSETS_STYLE_PACKAGE = GATLING_ASSETS_PACKAGE / GATLING_STYLE
-	val GATLING_IMPORTS_FILE = "imports.txt"
 
-	def dataFolder: Path = configuration.dataFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / "data")
-	def resultsFolder: Path = configuration.resultsFolderPath.getOrElse(GATLING_HOME / "results")
-	def requestBodiesFolder: Path = configuration.requestBodiesFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / GATLING_REQUEST_BODIES)
-	def simulationsFolder: Path = configuration.simulationsFolderPath.getOrElse(GATLING_USER_FILES_FOLDER / "simulations")
+	private def resolvePath(path: String): Path = {
+		val rawPath = Path(path)
+		if (rawPath.isAbsolute) path else GATLING_HOME / path
+	}
 
-	def resultFolder(runUuid: String): Path = resultsFolder / runUuid
-	def jsFolder(runUuid: String): Path = resultFolder(runUuid) / GATLING_JS
-	def styleFolder(runUuid: String): Path = resultFolder(runUuid) / GATLING_STYLE
-	def rawDataFolder(runUuid: String): Path = resultFolder(runUuid) / "rawdata"
-	def simulationLogDirectory(runUuid: String): Directory = {
-		val dir = resultFolder(runUuid)
-		dir.createDirectory()
+	def dataDirectory: Path = resolvePath(configuration.directory.data)
+	def resultsRootDirectory: Path = resolvePath(configuration.directory.results)
+	def requestBodiesDirectory: Path = resolvePath(configuration.directory.requestBodies)
+	def sourcesDirectory: Directory = resolvePath(configuration.directory.sources).toDirectory
+	def reportsOnlyDirectory: Option[String] = configuration.directory.reportsOnly
+	def binariesDirectory: Option[Directory] = configuration.directory.binaries.map(_.toDirectory)
+	def resultDirectory(runUuid: String): Path = resultsRootDirectory / runUuid
+	def jsDirectory(runUuid: String): Path = resultDirectory(runUuid) / GATLING_JS
+	def styleDirectory(runUuid: String): Path = resultDirectory(runUuid) / GATLING_STYLE
+	def simulationLogDirectory(runUuid: String, create: Boolean = true): Directory = {
+		val dir = resultDirectory(runUuid)
+		if (create) dir.createDirectory()
+		else {
+			require(dir.exists, "simulation directory '" + dir.toAbsolute + "' doesn't exist")
+			require(dir.isDirectory, "simulation directory '" + dir.toAbsolute + "' is not a directory")
+
+			dir.toDirectory
+		}
 	}
 }

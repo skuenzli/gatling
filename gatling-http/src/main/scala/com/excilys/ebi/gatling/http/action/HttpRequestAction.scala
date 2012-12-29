@@ -15,66 +15,31 @@
  */
 package com.excilys.ebi.gatling.http.action
 
-import com.excilys.ebi.gatling.core.action.system
-import com.excilys.ebi.gatling.core.action.Action
-import com.excilys.ebi.gatling.core.config.GatlingConfiguration
-import com.excilys.ebi.gatling.core.session.Session
-import com.excilys.ebi.gatling.http.action.HttpRequestAction.HTTP_CLIENT
-import com.excilys.ebi.gatling.http.ahc.{ GatlingAsyncHandlerActor, GatlingAsyncHandler, HandlerFactory, ExtendedResponseBuilder }
+import com.excilys.ebi.gatling.core.action.{ Action, Bypass }
+import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
+import com.excilys.ebi.gatling.core.session.{ Expression, Session }
+import com.excilys.ebi.gatling.http.ahc.{ GatlingAsyncHandler, GatlingAsyncHandlerActor, GatlingHttpClient }
+import com.excilys.ebi.gatling.http.cache.CacheHandling
 import com.excilys.ebi.gatling.http.check.HttpCheck
-import com.excilys.ebi.gatling.http.config.HttpConfig._
 import com.excilys.ebi.gatling.http.config.HttpProtocolConfiguration
 import com.excilys.ebi.gatling.http.referer.RefererHandling
 import com.excilys.ebi.gatling.http.request.builder.AbstractHttpRequestBuilder
-import com.excilys.ebi.gatling.http.request.HttpPhase.{ CompletePageReceived, BodyPartReceived }
-import com.ning.http.client.{ AsyncHttpClientConfig, AsyncHttpClient }
 
-import akka.actor.{ Props, ActorRef }
+import akka.actor.{ ActorRef, Props }
 import grizzled.slf4j.Logging
+import scalaz._
+import scalaz.Scalaz._
 
 /**
  * HttpRequestAction class companion
  */
 object HttpRequestAction extends Logging {
 
-	/**
-	 * The HTTP client used to send the requests
-	 */
-	val HTTP_CLIENT = {
-		// set up Netty LoggerFactory for slf4j instead of default JDK
-		try {
-			val nettyInternalLoggerFactoryClass = Class.forName("org.jboss.netty.logging.InternalLoggerFactory")
-			val nettySlf4JLoggerFactoryInstance = Class.forName("org.jboss.netty.logging.Slf4JLoggerFactory").newInstance
-			val setDefaultFactoryMethod = nettyInternalLoggerFactoryClass.getMethod("setDefaultFactory", nettyInternalLoggerFactoryClass)
-			setDefaultFactoryMethod.invoke(null, nettySlf4JLoggerFactoryInstance.asInstanceOf[AnyRef])
+	def apply(requestName: Expression[String], next: ActorRef, requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck[_]], protocolConfigurationRegistry: ProtocolConfigurationRegistry) = {
 
-		} catch {
-			case e => logger.info("Netty logger wasn't set up")
-		}
+		val httpConfig = protocolConfigurationRegistry.getProtocolConfiguration(HttpProtocolConfiguration.DEFAULT_HTTP_PROTOCOL_CONFIG)
 
-		val ahcConfigBuilder = new AsyncHttpClientConfig.Builder()
-			.setAllowPoolingConnection(GATLING_HTTP_CONFIG_ALLOW_POOLING_CONNECTION)
-			.setAllowSslConnectionPool(GATLING_HTTP_CONFIG_ALLOW_SSL_CONNECTION_POOL)
-			.setCompressionEnabled(GATLING_HTTP_CONFIG_COMPRESSION_ENABLED)
-			.setConnectionTimeoutInMs(GATLING_HTTP_CONFIG_CONNECTION_TIMEOUT)
-			.setIdleConnectionInPoolTimeoutInMs(GATLING_HTTP_CONFIG_IDLE_CONNECTION_IN_POOL_TIMEOUT_IN_MS)
-			.setIdleConnectionTimeoutInMs(GATLING_HTTP_CONFIG_IDLE_CONNECTION_TIMEOUT_IN_MS)
-			.setIOThreadMultiplier(GATLING_HTTP_CONFIG_IO_THREAD_MULTIPLIER)
-			.setMaximumConnectionsPerHost(GATLING_HTTP_MAXIMUM_CONNECTIONS_PER_HOST)
-			.setMaximumConnectionsTotal(GATLING_HTTP_MAXIMUM_CONNECTIONS_TOTAL)
-			.setMaxRequestRetry(GATLING_HTTP_CONFIG_MAX_RETRY)
-			.setRequestCompressionLevel(GATLING_HTTP_CONFIG_REQUEST_COMPRESSION_LEVEL)
-			.setRequestTimeoutInMs(GATLING_HTTP_CONFIG_REQUEST_TIMEOUT_IN_MS)
-			.setUseProxyProperties(GATLING_HTTP_CONFIG_USE_PROXY_PROPERTIES)
-			.setUserAgent(GATLING_HTTP_CONFIG_USER_AGENT)
-			.setUseRawUrl(GATLING_HTTP_CONFIG_USE_RAW_URL)
-			.build
-
-		val client = new AsyncHttpClient(GATLING_HTTP_CONFIG_PROVIDER_CLASS, ahcConfigBuilder)
-
-		system.registerOnTermination(client.close)
-
-		client
+		new HttpRequestAction(requestName, next, requestBuilder, checks, httpConfig)
 	}
 }
 
@@ -88,30 +53,37 @@ object HttpRequestAction extends Logging {
  * @param checks the checks that will be performed on the response
  * @param protocolConfiguration the protocol specific configuration
  */
-class HttpRequestAction(requestName: String, next: ActorRef, requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck[_]], protocolConfiguration: Option[HttpProtocolConfiguration], gatlingConfiguration: GatlingConfiguration)
-		extends Action with Logging {
+class HttpRequestAction(requestName: Expression[String], val next: ActorRef, requestBuilder: AbstractHttpRequestBuilder[_], checks: List[HttpCheck[_]], protocolConfiguration: HttpProtocolConfiguration) extends Action with Bypass {
 
-	val handlerFactory: HandlerFactory = GatlingAsyncHandler.newHandlerFactory(checks)
-	val responseBuilderFactory = ExtendedResponseBuilder.newExtendedResponseBuilder(checks)
-
-	val client = HTTP_CLIENT
-	val followRedirect = protocolConfiguration.map(_.followRedirectEnabled).getOrElse(true)
+	val handlerFactory = GatlingAsyncHandler.newHandlerFactory(checks, protocolConfiguration)
+	val asyncHandlerActorFactory = GatlingAsyncHandlerActor.newAsyncHandlerActorFactory(checks, next, protocolConfiguration) _
 
 	def execute(session: Session) {
-		info("Sending Request '" + requestName + "': Scenario '" + session.scenarioName + "', UserId #" + session.userId)
 
-		try {
-			val request = requestBuilder.build(session, protocolConfiguration)
-			val newSession = RefererHandling.storeReferer(request, session, protocolConfiguration)
-			val actor = context.actorOf(Props(new GatlingAsyncHandlerActor(newSession, checks, next, requestName, request, followRedirect, protocolConfiguration, gatlingConfiguration, handlerFactory, responseBuilderFactory)))
-			val ahcHandler = handlerFactory(requestName, actor)
-			client.executeRequest(request, ahcHandler)
+		val execution = for {
+			resolvedRequestName <- requestName(session)
+			request <- requestBuilder.build(session, protocolConfiguration)
+		} yield (resolvedRequestName, request)
 
-		} catch {
-			case e => {
-				error("request " + requestName + " building crashed, skipping it", e)
+		execution match {
+			case Success((resolvedRequestName, request)) =>
+
+				val newSession = RefererHandling.storeReferer(request, session, protocolConfiguration)
+
+				if (CacheHandling.isCached(protocolConfiguration, session, request)) {
+					info("Bypassing cached Request '" + resolvedRequestName + "': Scenario '" + session.scenarioName + "', UserId #" + session.userId)
+					next ! newSession
+
+				} else {
+					info("Sending Request '" + resolvedRequestName + "': Scenario '" + session.scenarioName + "', UserId #" + session.userId)
+					val actor = context.actorOf(Props(asyncHandlerActorFactory(resolvedRequestName)(request, newSession)))
+					val ahcHandler = handlerFactory(resolvedRequestName, actor)
+					GatlingHttpClient.client.executeRequest(request, ahcHandler)
+				}
+
+			case Failure(message) =>
+				error(message)
 				next ! session
-			}
 		}
 	}
 }

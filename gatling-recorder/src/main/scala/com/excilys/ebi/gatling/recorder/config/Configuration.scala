@@ -15,25 +15,27 @@
  */
 package com.excilys.ebi.gatling.recorder.config
 
-import java.io.{ IOException, FileWriter }
+import java.io.{ FileWriter, IOException }
+import java.util.{ HashMap => JHashMap }
 
+import scala.io.Codec.UTF8
 import scala.reflect.BeanProperty
-import scala.tools.nsc.io.Path.string2path
 import scala.tools.nsc.io.File
+import scala.tools.nsc.io.Path.string2path
 
-import com.excilys.ebi.gatling.core.config.{ GatlingFiles, GatlingConfiguration }
+import com.excilys.ebi.gatling.core.config.{ GatlingConfiguration, GatlingFiles }
 import com.excilys.ebi.gatling.core.util.IOHelper.use
 import com.excilys.ebi.gatling.recorder.ui.Commons.GATLING_RECORDER_FILE_NAME
 import com.excilys.ebi.gatling.recorder.ui.enumeration.FilterStrategy.NONE
-import com.thoughtworks.xstream.io.xml.DomDriver
 import com.thoughtworks.xstream.XStream
+import com.thoughtworks.xstream.io.xml.DomDriver
 
 import grizzled.slf4j.Logging
 
 object Configuration extends Logging {
 
-	GatlingConfiguration.setUp(None, None, None, None, None)
-	val DEFAULT_CLASS_NAME = "Simulation"
+	GatlingConfiguration.setUp(new JHashMap)
+	val DEFAULT_CLASS_NAME = "RecordedSimulation"
 
 	private val XSTREAM = {
 		val xstream = new XStream(new DomDriver)
@@ -46,7 +48,7 @@ object Configuration extends Logging {
 
 	val configuration = new Configuration
 
-	def apply(options: Options) {
+	def apply(options: RecorderOptions) {
 		initFromDisk
 		initFromCli(options)
 	}
@@ -87,7 +89,7 @@ object Configuration extends Logging {
 		}
 	}
 
-	private def initFromCli(o: Options) {
+	private def initFromCli(o: RecorderOptions) {
 		o.localPort.map(configuration.port = _)
 		o.localPortSsl.map(configuration.sslPort = _)
 		for {
@@ -113,10 +115,10 @@ class Configuration {
 	@BeanProperty var proxy = new ProxyConfig
 	@BeanProperty var filterStrategy = NONE
 	@BeanProperty var patterns: List[Pattern] = Nil
-	@BeanProperty var outputFolder: String = Option(System.getenv("GATLING_HOME")).map(_ => GatlingFiles.simulationsFolder.toString).getOrElse(System.getProperty("user.home"))
+	@BeanProperty var outputFolder: String = Option(System.getenv("GATLING_HOME")).map(_ => GatlingFiles.sourcesDirectory.toString).getOrElse(System.getProperty("user.home"))
 	@transient var saveConfiguration = false
-	@BeanProperty var encoding = "UTF-8"
-	@transient var requestBodiesFolder: String = GatlingFiles.requestBodiesFolder.toString
+	@BeanProperty var encoding = UTF8.name
+	@transient var requestBodiesFolder: String = GatlingFiles.requestBodiesDirectory.toString
 	@BeanProperty var simulationPackage: Option[String] = None
 	@BeanProperty var simulationClassName: String = Configuration.DEFAULT_CLASS_NAME
 	@BeanProperty var followRedirect: Boolean = true

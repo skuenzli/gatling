@@ -13,20 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.excilys.ebi.gatling.recorder.http.channel;
+package com.excilys.ebi.gatling.recorder.http.channel
 
 import org.jboss.netty.bootstrap.{ ServerBootstrap, ClientBootstrap }
-import org.jboss.netty.channel.Channels.pipeline
-import org.jboss.netty.channel.socket.nio.{ NioServerSocketChannelFactory, NioClientSocketChannelFactory }
 import org.jboss.netty.channel.{ ChannelPipelineFactory, ChannelPipeline, ChannelHandlerContext }
+import org.jboss.netty.channel.Channels
+import org.jboss.netty.channel.socket.nio.{ NioServerSocketChannelFactory, NioClientSocketChannelFactory }
 import org.jboss.netty.handler.codec.http.{ HttpResponseEncoder, HttpRequestDecoder, HttpRequest, HttpContentDecompressor, HttpContentCompressor, HttpClientCodec, HttpChunkAggregator }
 import org.jboss.netty.handler.ssl.SslHandler
 
 import com.excilys.ebi.gatling.recorder.config.ProxyConfig
+import com.excilys.ebi.gatling.recorder.controller.RecorderController
 import com.excilys.ebi.gatling.recorder.http.handler.{ ServerHttpResponseHandler, BrowserHttpsRequestHandler, BrowserHttpRequestHandler }
 import com.excilys.ebi.gatling.recorder.http.ssl.{ SSLEngineFactory, FirstEventIsUnsecuredConnectSslHandler }
 
 object BootstrapFactory {
+
+	val SSL_HANDLER_NAME = "ssl"
 
 	private val CHUNK_MAX_SIZE = 100 * 1024 * 1024; // 100Mo
 
@@ -34,20 +37,20 @@ object BootstrapFactory {
 
 	private val serverChannelFactory = new NioServerSocketChannelFactory
 
-	def newClientBootstrap(browserCtx: ChannelHandlerContext, browserRequest: HttpRequest, ssl: Boolean): ClientBootstrap = {
+	def newClientBootstrap(controller: RecorderController, requestContext: ChannelHandlerContext, browserRequest: HttpRequest, ssl: Boolean): ClientBootstrap = {
 		val bootstrap = new ClientBootstrap(clientChannelFactory)
 		bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
 			def getPipeline: ChannelPipeline = {
-				val tmpPipeline = pipeline()
+				val pipeline = Channels.pipeline
 
 				if (ssl)
-					tmpPipeline.addLast("ssl", new SslHandler(SSLEngineFactory.newClientSSLEngine))
-				tmpPipeline.addLast("codec", new HttpClientCodec)
-				tmpPipeline.addLast("inflater", new HttpContentDecompressor)
-				tmpPipeline.addLast("aggregator", new HttpChunkAggregator(CHUNK_MAX_SIZE))
-				tmpPipeline.addLast("gatling", new ServerHttpResponseHandler(browserCtx, browserRequest))
+					pipeline.addLast(SSL_HANDLER_NAME, new SslHandler(SSLEngineFactory.newClientSSLEngine))
+				pipeline.addLast("codec", new HttpClientCodec)
+				pipeline.addLast("inflater", new HttpContentDecompressor)
+				pipeline.addLast("aggregator", new HttpChunkAggregator(CHUNK_MAX_SIZE))
+				pipeline.addLast("gatling", new ServerHttpResponseHandler(controller, requestContext, browserRequest))
 
-				tmpPipeline
+				pipeline
 			}
 		})
 
@@ -57,25 +60,25 @@ object BootstrapFactory {
 		bootstrap
 	}
 
-	def newServerBootstrap(proxyConfig: ProxyConfig, ssl: Boolean): ServerBootstrap = {
+	def newServerBootstrap(controller: RecorderController, proxyConfig: ProxyConfig, ssl: Boolean): ServerBootstrap = {
 
 		val bootstrap = new ServerBootstrap(serverChannelFactory)
 
 		bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
 			def getPipeline: ChannelPipeline = {
-				val tmpPipeline = pipeline()
+				val pipeline = Channels.pipeline
 				if (ssl)
-					tmpPipeline.addLast("ssl", new FirstEventIsUnsecuredConnectSslHandler(SSLEngineFactory.newServerSSLEngine))
-				tmpPipeline.addLast("decoder", new HttpRequestDecoder)
-				tmpPipeline.addLast("aggregator", new HttpChunkAggregator(CHUNK_MAX_SIZE))
-				tmpPipeline.addLast("encoder", new HttpResponseEncoder)
-				tmpPipeline.addLast("deflater", new HttpContentCompressor)
+					pipeline.addLast(SSL_HANDLER_NAME, new FirstEventIsUnsecuredConnectSslHandler(SSLEngineFactory.newServerSSLEngine))
+				pipeline.addLast("decoder", new HttpRequestDecoder)
+				pipeline.addLast("aggregator", new HttpChunkAggregator(CHUNK_MAX_SIZE))
+				pipeline.addLast("encoder", new HttpResponseEncoder)
+				pipeline.addLast("deflater", new HttpContentCompressor)
 				if (ssl)
-					tmpPipeline.addLast("gatling", new BrowserHttpsRequestHandler(proxyConfig))
+					pipeline.addLast("gatling", new BrowserHttpsRequestHandler(controller, proxyConfig))
 				else
-					tmpPipeline.addLast("gatling", new BrowserHttpRequestHandler(proxyConfig))
+					pipeline.addLast("gatling", new BrowserHttpRequestHandler(controller, proxyConfig))
 
-				tmpPipeline
+				pipeline
 			}
 		})
 

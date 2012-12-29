@@ -15,21 +15,16 @@
  */
 package com.excilys.ebi.gatling.core.action.builder
 
-import java.util.UUID.randomUUID
-
-import com.excilys.ebi.gatling.core.action.system
-import com.excilys.ebi.gatling.core.action.WhileAction
+import com.excilys.ebi.gatling.core.action.{ WhileAction, system }
 import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
-import com.excilys.ebi.gatling.core.session.Session
+import com.excilys.ebi.gatling.core.session.Expression
 import com.excilys.ebi.gatling.core.structure.ChainBuilder
 
-import akka.actor.{ Props, ActorRef }
+import akka.actor.{ ActorRef, Props }
 
 object WhileActionBuilder {
-	/**
-	 * Creates an initialized WhileActionBuilder
-	 */
-	def whileActionBuilder = new WhileActionBuilder(null, null, null, randomUUID.toString)
+
+	def apply(condition: Expression[Boolean], loopNext: ChainBuilder, counterName: String) = new WhileActionBuilder(condition, loopNext, counterName, null)
 }
 
 /**
@@ -40,33 +35,14 @@ object WhileActionBuilder {
  * @param loopNext chain that will be executed if condition evaluates to true
  * @param next action that will be executed if condition evaluates to false
  */
-class WhileActionBuilder(condition: Session => Boolean, loopNext: ChainBuilder, next: ActorRef, counterName: String) extends ActionBuilder {
+class WhileActionBuilder(condition: Expression[Boolean], loopNext: ChainBuilder, counterName: String, next: ActorRef) extends ActionBuilder {
 
-	/**
-	 * Adds condition to this builder
-	 *
-	 * @param condition the condition function
-	 * @return a new builder with condition set
-	 */
-	def withCondition(condition: Session => Boolean): WhileActionBuilder = new WhileActionBuilder(condition, loopNext, next, counterName)
+	def withNext(next: ActorRef) = new WhileActionBuilder(condition, loopNext, counterName, next)
 
-	/**
-	 * Adds loopNext to builder
-	 *
-	 * @param loopNext the chain executed if testFunction evaluated to true
-	 * @return a new builder with loopNext set
-	 */
-	def withLoopNext(loopNext: ChainBuilder) = new WhileActionBuilder(condition, loopNext, next, counterName)
-
-	/**
-	 * Adds counterName to builder
-	 *
-	 * @param counterName the name of the counter that will be used
-	 * @return a new builder with counterName set to None or Some(name)
-	 */
-	def withCounterName(counterName: String) = new WhileActionBuilder(condition, loopNext, next, counterName)
-
-	def withNext(next: ActorRef) = new WhileActionBuilder(condition, loopNext, next, counterName)
-
-	def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry) = system.actorOf(Props(new WhileAction(condition, (next: ActorRef) => loopNext.withNext(next).build(protocolConfigurationRegistry), next, counterName)))
+	def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry) = {
+		val whileActor = system.actorOf(Props(new WhileAction(condition, next, counterName)))
+		val loopContent = loopNext.withNext(whileActor).build(protocolConfigurationRegistry)
+		whileActor ! loopContent
+		whileActor
+	}
 }

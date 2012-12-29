@@ -15,101 +15,53 @@
  */
 package com.excilys.ebi.gatling.core.runner
 
-import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit.SECONDS
+
+import org.joda.time.DateTime.now
 
 import com.excilys.ebi.gatling.core.action.system
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
-import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
 import com.excilys.ebi.gatling.core.result.message.RunRecord
+import com.excilys.ebi.gatling.core.result.terminator.Terminator
 import com.excilys.ebi.gatling.core.result.writer.DataWriter
-import com.excilys.ebi.gatling.core.scenario.configuration.{ ScenarioConfigurationBuilder, ScenarioConfiguration }
-import com.excilys.ebi.gatling.core.session.Session
+import com.excilys.ebi.gatling.core.scenario.configuration.Simulation
 
-import akka.actor.ActorRef
-import akka.util.duration.longToDurationLong
-import akka.util.Duration
 import grizzled.slf4j.Logging
 
-class Runner(runRecord: RunRecord, scenarioConfigurationBuilders: Seq[ScenarioConfigurationBuilder]) extends Logging {
+class Runner(selection: Selection) extends Logging {
 
-	// stores all scenario configurations
-	val scenarioConfigurations = for (i <- 0 until scenarioConfigurationBuilders.size) yield scenarioConfigurationBuilders(i).build(i + 1)
+	def run: (String, Simulation) = {
 
-	// Counts the number of users
-	val totalNumberOfUsers = scenarioConfigurations.map(_.users).sum
+		try {
+			val simulationClass = selection.simulationClass
+			println("Simulation " + simulationClass.getName + " started...")
 
-	// latch for determining when to send a flush order to the DataWriter
-	val userLatch = new CountDownLatch(totalNumberOfUsers)
+			val runRecord = RunRecord(now, selection.simulationId, selection.description)
 
-	// latch for determining when to stop the application
-	val dataWriterLatch = new CountDownLatch(1)
+			val simulation = simulationClass.newInstance
+			val scenarios = simulation.scenarios
 
-	// Builds all scenarios
-	val scenarios = scenarioConfigurations.map { scenarioConfiguration =>
-		val protocolRegistry = ProtocolConfigurationRegistry(scenarioConfiguration.protocolConfigurations)
-		scenarioConfiguration.scenarioBuilder.end(userLatch).build(protocolRegistry)
-	}
+			require(!scenarios.isEmpty, simulationClass.getName + " returned an empty scenario list. Did you forget to migrate your Simulations?")
 
-	// Creates a List of Tuples with scenario configuration / scenario 
-	val scenariosAndConfigurations = scenarioConfigurations zip scenarios
+			val totalNumberOfUsers = scenarios.map(_.configuration.users).sum
+			info("Total number of users : " + totalNumberOfUsers)
 
-	info("Total number of users : " + totalNumberOfUsers)
+			val terminatorLatch = new CountDownLatch(1)
+			Terminator.init(terminatorLatch, totalNumberOfUsers)
+			DataWriter.init(runRecord, scenarios)
 
-	/**
-	 * This method schedules the beginning of all scenarios
-	 */
-	def run {
-		DataWriter.init(runRecord, totalNumberOfUsers, dataWriterLatch, configuration.encoding)
+			debug("Launching All Scenarios")
+			scenarios.foreach(_.run)
+			debug("Finished Launching scenarios executions")
 
-		debug("Launching All Scenarios")
+			terminatorLatch.await(configuration.timeOut.simulation, SECONDS)
+			println("Simulation finished.")
 
-		// Scheduling all scenarios
-		scenariosAndConfigurations.map {
-			case (scenario, configuration) => {
-				val (delayDuration, delayUnit) = scenario.delay
-				system.scheduler.scheduleOnce(Duration(delayDuration, delayUnit))(startOneScenario(scenario, configuration.firstAction))
-			}
-		}
+			(runRecord.runId, simulation)
 
-		debug("Finished Launching scenarios executions")
-		userLatch.await(configuration.simulationTimeOut, SECONDS)
-
-		DataWriter.askFlush
-		dataWriterLatch.await(configuration.simulationTimeOut, SECONDS)
-
-		debug("All scenarios finished, stoping actors")
-	}
-
-	/**
-	 * This method starts one scenario
-	 *
-	 * @param configuration the configuration of the scenario
-	 * @scenario the scenario that will be executed
-	 * @return Nothing
-	 */
-	private def startOneScenario(configuration: ScenarioConfiguration, scenario: ActorRef) = {
-		if (configuration.users == 1) {
-			// if single user, execute right now
-			scenario ! buildSession(configuration, 1)
-
-		} else {
-			// otherwise, schedule
-			val (rampValue, rampUnit) = configuration.ramp
-			// compute ramp period in millis so we can ramp less that one user per second
-			val period = rampUnit.toMillis(rampValue) / (configuration.users - 1)
-
-			for (i <- 1 to configuration.users)
-				system.scheduler.scheduleOnce(period * (i - 1) milliseconds, scenario, buildSession(configuration, i))
+		} finally {
+			system.shutdown
 		}
 	}
-
-	/**
-	 * This method builds the session that will be sent to the first action of a scenario
-	 *
-	 * @param configuration the configuration of the scenario
-	 * @param userId the id of the current user
-	 * @return the built session
-	 */
-	private def buildSession(configuration: ScenarioConfiguration, userId: Int) = new Session(configuration.scenarioBuilder.name, userId)
 }

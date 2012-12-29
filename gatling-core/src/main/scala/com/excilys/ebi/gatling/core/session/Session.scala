@@ -15,20 +15,27 @@
  */
 package com.excilys.ebi.gatling.core.session
 
-import com.excilys.ebi.gatling.core.session.handler.{ TimerBasedIterationHandler, CounterBasedIterationHandler }
+import com.excilys.ebi.gatling.core.util.TypeHelper
+
+import grizzled.slf4j.Logging
+import scalaz._
+import scalaz.Scalaz._
 
 /**
  * Session class companion
  */
-object Session {
+object Session extends Logging {
 
 	val GATLING_PRIVATE_ATTRIBUTE_PREFIX = "gatling."
 
-	/**
-	 * Key for last action duration
-	 */
 	val TIME_SHIFT_KEY = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "core.timeShift"
+
+	val FAILED_KEY = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "core.failed"
+
+	val MUST_EXIT_ON_FAIL_KEY = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "core.mustExitOnFailed"
+
 }
+
 /**
  * Session class representing the session passing through a scenario for a given user
  *
@@ -39,75 +46,43 @@ object Session {
  * @param userId the id of the current user
  * @param data the map that stores all values needed
  */
-class Session(val scenarioName: String, val userId: Int, data: Map[String, Any] = Map.empty) {
+class Session(val scenarioName: String, val userId: Int, attributes: Map[String, Any] = Map.empty) {
 
-	def getAttribute(key: String): Any = getTypedAttribute[Any](key)
+	def apply(name: String) = attributes(name)
 
-	/**
-	 * Gets a value from the session
-	 *
-	 * @param key the key of the requested value
-	 * @return the value stored at key
-	 */
-	def getTypedAttribute[X](key: String): X = data.get(key).getOrElse(throw new IllegalArgumentException("No Matching Session attribute for key " + key)).asInstanceOf[X]
+	def get(key: String): Option[Any] = attributes.get(key)
 
-	/**
-	 * Gets a value from the session
-	 *
-	 * This method is to be used only internally, use getAttribute in scenarios
-	 *
-	 * @param key the key of the requested value
-	 * @return the value stored at key as an Option
-	 */
-	def getAttributeAsOption[T](key: String): Option[T] = data.get(key).asInstanceOf[Option[T]]
+	def getAs[T](key: String): Option[T] = attributes.get(key).map(_.asInstanceOf[T])
 
-	/**
-	 * Sets values in the session
-	 *
-	 * @param attributes map containing several values to be stored in session
-	 * @return Nothing
-	 */
-	def setAttributes(attributes: Map[String, Any]) = new Session(scenarioName, userId, data ++ attributes)
+	def safeGetAs[T: ClassManifest](key: String): Validation[String, T] = attributes.get(key).map(TypeHelper.as[T](_)).getOrElse(undefinedSessionAttributeMessage(key).failure[T])
 
-	/**
-	 * Sets a single value in the session
-	 *
-	 * @param attributeKey the key of the attribute
-	 * @param attributeValue the value of the attribute
-	 * @return Unit
-	 */
-	def setAttribute(attributeKey: String, attributeValue: Any) = new Session(scenarioName, userId, data + (attributeKey -> attributeValue))
+	def set(attributes: Map[String, Any]) = new Session(scenarioName, userId, attributes ++ attributes)
 
-	/**
-	 * Removes an attribute and its value from the session
-	 *
-	 * @param attributeKey the key of the attribute to be removed
-	 */
-	def removeAttribute(attributeKey: String) = new Session(scenarioName, userId, data - attributeKey)
+	def set(key: String, value: Any) = new Session(scenarioName, userId, attributes + (key -> value))
 
-	def isAttributeDefined(attributeKey: String) = data.contains(attributeKey)
+	def remove(key: String) = if (contains(key)) new Session(scenarioName, userId, attributes - key) else this
 
-	/**
-	 * This method gets the specified counter from the session
-	 *
-	 * @param counterName the name of the counter
-	 * @return the value of the counter as an integer
-	 */
-	def getCounterValue(counterName: String) = getAttributeAsOption[Int](CounterBasedIterationHandler.getCounterAttributeName(counterName)).getOrElse(throw new IllegalAccessError("Counter does not exist, check the name of the key " + counterName))
+	def contains(attributeKey: String) = attributes.contains(attributeKey)
 
-	/**
-	 * This method gets the specified timer from the session
-	 *
-	 * @param timerName the name of the timer
-	 * @return the value of the timer as a long
-	 */
-	def getTimerValue(timerName: String) = getAttributeAsOption[Long](TimerBasedIterationHandler.getTimerAttributeName(timerName)).getOrElse(throw new IllegalAccessError("Timer is not set : " + timerName))
+	def setFailed: Session = set(Session.FAILED_KEY, "")
 
-	private[gatling] def setTimeShift(timeShift: Long): Session = setAttribute(Session.TIME_SHIFT_KEY, timeShift)
+	def clearFailed: Session = remove(Session.FAILED_KEY)
+
+	def isFailed: Boolean = contains(Session.FAILED_KEY)
+
+	def setMustExitOnFail: Session = set(Session.MUST_EXIT_ON_FAIL_KEY, "")
+
+	def isMustExitOnFail: Boolean = contains(Session.MUST_EXIT_ON_FAIL_KEY)
+
+	def clearMustExitOnFail: Session = remove(Session.MUST_EXIT_ON_FAIL_KEY)
+
+	def shouldExitBecauseFailed: Boolean = isFailed && isMustExitOnFail
+
+	private[gatling] def setTimeShift(timeShift: Long): Session = set(Session.TIME_SHIFT_KEY, timeShift)
 
 	private[gatling] def increaseTimeShift(time: Long): Session = setTimeShift(time + getTimeShift)
 
-	private[gatling] def getTimeShift: Long = getAttributeAsOption[Long](Session.TIME_SHIFT_KEY).getOrElse(0L)
+	private[gatling] def getTimeShift: Long = getAs[Long](Session.TIME_SHIFT_KEY).getOrElse(0L)
 
-	override def toString = new StringBuilder().append("scenarioName='").append(scenarioName).append("' userId='").append(userId).append("' data='").append(data).append("'").toString
+	override def toString = "scenarioName='" + scenarioName + "' userId='" + userId + "' data='" + attributes + "'"
 }

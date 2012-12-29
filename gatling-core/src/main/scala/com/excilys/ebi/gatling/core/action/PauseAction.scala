@@ -16,14 +16,11 @@
 package com.excilys.ebi.gatling.core.action
 
 import java.lang.System.currentTimeMillis
-import java.util.concurrent.TimeUnit
 
 import com.excilys.ebi.gatling.core.session.Session
 
-import akka.actor.actorRef2Scala
 import akka.actor.ActorRef
 import akka.util.duration.longToDurationLong
-import grizzled.slf4j.Logging
 
 /**
  * PauseAction provides a convenient means to implement pause actions based on random distributions.
@@ -31,8 +28,8 @@ import grizzled.slf4j.Logging
  * @param next the next action to execute, which will be notified after the pause is complete
  * @param generateDelayInMillis a function that can be used to generate a delays for the pause action
  */
-class PauseAction(next: ActorRef, generateDelayInMillis: () => Long) extends Action with Logging {
-
+class PauseAction(val next: ActorRef, generateDelayInMillis: () => Long) extends Action with Bypass {
+	
 	/**
 	 * Generates a duration if required or use the one given and defer
 	 * next actor execution of this duration
@@ -47,7 +44,7 @@ class PauseAction(next: ActorRef, generateDelayInMillis: () => Long) extends Act
 		if (durationInMillis > timeShift) {
 			// can make pause
 			val durationMinusTimeShift = durationInMillis - timeShift
-			info(new StringBuilder().append("Pausing for ").append(durationInMillis).append("ms (real=").append(durationMinusTimeShift).append("ms)"))
+			info("Pausing for " + durationInMillis + "ms (real=" + durationMinusTimeShift + "ms)")
 
 			val pauseStart = currentTimeMillis
 			system.scheduler.scheduleOnce(durationMinusTimeShift milliseconds) {
@@ -58,7 +55,7 @@ class PauseAction(next: ActorRef, generateDelayInMillis: () => Long) extends Act
 		} else {
 			// time shift is too big
 			val remainingTimeShift = timeShift - durationInMillis
-			info(new StringBuilder().append("can't pause (remaining time shift=").append(remainingTimeShift).append("ms)"))
+			info("can't pause (remaining time shift=" + remainingTimeShift + "ms)")
 			next ! session.setTimeShift(remainingTimeShift)
 		}
 	}

@@ -15,23 +15,34 @@
  */
 package com.excilys.ebi.gatling.core.action
 
-import com.excilys.ebi.gatling.core.session.handler.{ TimerBasedIterationHandler, CounterBasedIterationHandler }
-import com.excilys.ebi.gatling.core.session.Session
+import com.excilys.ebi.gatling.core.session.{ Expression, Session }
+import com.excilys.ebi.gatling.core.session.handler.{ CounterBasedIterationHandler, TimerBasedIterationHandler }
+
 import akka.actor.ActorRef
-import grizzled.slf4j.Logging
+import scalaz._
+import scalaz.Scalaz._
 
 /**
  * Action in charge of controlling a while loop execution.
  *
  * @constructor creates a While loop in the scenario
  * @param condition the condition that decides when to exit the loop
- * @param loopNext the chain executed if condition evaluates to true, passed as a Function for build time
  * @param next the chain executed if testFunction evaluates to false
  * @param counterName the name of the counter for this loop
  */
-class WhileAction(condition: Session => Boolean, loopNext: ActorRef => ActorRef, next: ActorRef, val counterName: String) extends Action with TimerBasedIterationHandler with CounterBasedIterationHandler with Logging {
+class WhileAction(condition: Expression[Boolean], val next: ActorRef, val counterName: String) extends Action with TimerBasedIterationHandler with CounterBasedIterationHandler with Bypass {
 
-	val loopNextAction = loopNext(self)
+	var loopNextAction: ActorRef = _
+
+	def uninitialized: Receive = {
+		case actor: ActorRef =>
+			loopNextAction = actor
+			context.become(initialized)
+	}
+
+	def initialized: Receive = super.receive
+
+	override def receive = uninitialized
 
 	/**
 	 * Evaluates the condition and if true executes the first action of loopNext
@@ -43,17 +54,21 @@ class WhileAction(condition: Session => Boolean, loopNext: ActorRef => ActorRef,
 
 		val sessionWithTimerIncremented = increment(init(session))
 
-		val continue = try {
-			condition(sessionWithTimerIncremented)
-		} catch {
-			case e =>
-				error("'loop' condition evaluation crashed, exiting block for this user", e)
-				false
-		}
+		// as WhileAction is not supervised, there's no one to restore its state (loopNextAction) on crash, so we try to avoid it
+		val evaluatedCondition =
+			try condition(sessionWithTimerIncremented)
+			catch {
+				case e: Exception =>
+					error("Loop condition evaluation crashed", e)
+					("Loop condition evaluation crashed: " + e.getMessage).failure
+			}
 
-		if (continue)
-			loopNextAction ! sessionWithTimerIncremented
-		else
-			next ! expire(sessionWithTimerIncremented)
+		evaluatedCondition match {
+			case Success(true) => loopNextAction ! sessionWithTimerIncremented
+			case Success(false) => next ! expire(session)
+			case Failure(message) =>
+				error("Error, exiting loop " + message)
+				next ! expire(session)
+		}
 	}
 }

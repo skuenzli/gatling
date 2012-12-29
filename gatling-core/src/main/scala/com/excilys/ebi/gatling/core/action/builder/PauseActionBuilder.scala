@@ -15,20 +15,19 @@
  */
 package com.excilys.ebi.gatling.core.action.builder
 
-import java.util.concurrent.TimeUnit
-
-import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
-
-import akka.actor.{ Props, ActorRef }
-import com.excilys.ebi.gatling.core.util.NumberHelper.createUniformRandomLongGenerator
 import com.excilys.ebi.gatling.core.action.{ PauseAction, system }
+import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
+import com.excilys.ebi.gatling.core.util.NumberHelper.createUniformRandomLongGenerator
+
+import akka.actor.{ ActorRef, Props }
+import akka.util.Duration
 
 object PauseActionBuilder {
 
 	/**
 	 * Creates an initialized PauseActionBuilder with time unit in Seconds
 	 */
-	def pauseActionBuilder = new PauseActionBuilder(0, None, TimeUnit.SECONDS, null)
+	def apply(minDuration: Duration, maxDuration: Option[Duration]) = new PauseActionBuilder(minDuration, maxDuration, null)
 }
 
 /**
@@ -37,48 +36,15 @@ object PauseActionBuilder {
  * @constructor create a new PauseActionBuilder
  * @param minDuration minimum duration of the generated pause
  * @param maxDuration maximum duration of the generated pause
- * @param timeUnit time unit of the duration of the generated pause
  * @param next action that will be executed after the generated pause
  */
-class PauseActionBuilder(minDuration: Long, maxDuration: Option[Long] = None, timeUnit: TimeUnit, next: ActorRef) extends ActionBuilder {
+class PauseActionBuilder(minDuration: Duration, maxDuration: Option[Duration] = None, next: ActorRef) extends ActionBuilder {
 
-	/**
-	 * Adds minDuration to builder
-	 *
-	 * @param minDuration the minimum duration of the pause
-	 * @return a new builder with minDuration set
-	 */
-	def withMinDuration(minDuration: Long) = new PauseActionBuilder(minDuration, maxDuration, timeUnit, next)
-
-	/**
-	 * Adds maxDuration to builder
-	 *
-	 * @param maxDuration the maximum duration of the pause
-	 * @return a new builder with maxDuration set
-	 */
-	def withMaxDuration(maxDuration: Option[Long]) = new PauseActionBuilder(minDuration, maxDuration, timeUnit, next)
-
-	/**
-	 * Adds duration to builder
-	 *
-	 * @param duration the duration of the pause
-	 * @return a new builder with duration set
-	 */
-	def withDuration(duration: Long) = new PauseActionBuilder(duration, None, timeUnit, next)
-
-	/**
-	 * Adds timeUnit to builder
-	 *
-	 * @param timeUnit time unit of the duration
-	 * @return a new builder with timeUnit set
-	 */
-	def withTimeUnit(timeUnit: TimeUnit) = new PauseActionBuilder(minDuration, maxDuration, timeUnit, next)
-
-	def withNext(next: ActorRef) = new PauseActionBuilder(minDuration, maxDuration, timeUnit, next)
+	def withNext(next: ActorRef) = new PauseActionBuilder(minDuration, maxDuration, next)
 
 	def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry) = {
-		val minDurationInMillis = TimeUnit.MILLISECONDS.convert(minDuration, timeUnit)
-		val maxDurationInMillis = maxDuration.map(TimeUnit.MILLISECONDS.convert(_, timeUnit))
+		val minDurationInMillis = minDuration.toMillis
+		val maxDurationInMillis = maxDuration.map(_.toMillis)
 
 		val delayGenerator: () => Long = maxDurationInMillis.map(
 			createUniformRandomLongGenerator(minDurationInMillis, _))

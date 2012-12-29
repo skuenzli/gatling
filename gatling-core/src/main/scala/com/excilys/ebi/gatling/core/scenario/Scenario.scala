@@ -15,6 +15,35 @@
  */
 package com.excilys.ebi.gatling.core.scenario
 
-import akka.actor.ActorRef
+import com.excilys.ebi.gatling.core.action.system
+import com.excilys.ebi.gatling.core.scenario.configuration.ScenarioConfiguration
+import com.excilys.ebi.gatling.core.session.Session
 
-class Scenario(name: String, val firstAction: ActorRef)
+import akka.actor.ActorRef
+import akka.util.duration.longToDurationLong
+
+class Scenario(val name: String, entryPoint: ActorRef, val configuration: ScenarioConfiguration) {
+
+	def run {
+
+		def doRun {
+			if (configuration.users == 1) {
+				// if single user, execute right now
+				entryPoint ! new Session(name, 1)
+
+			} else {
+				configuration.ramp.map { duration =>
+					val period = duration.toMillis.toDouble / (configuration.users - 1)
+					for (i <- 1 to configuration.users) system.scheduler.scheduleOnce((period * (i - 1)).toInt milliseconds, entryPoint, new Session(name, i))
+
+				}.getOrElse {
+					for (i <- 1 to configuration.users) entryPoint ! new Session(name, i)
+				}
+			}
+		}
+
+		configuration.delay
+			.map(system.scheduler.scheduleOnce(_)(doRun))
+			.getOrElse(doRun)
+	}
+}

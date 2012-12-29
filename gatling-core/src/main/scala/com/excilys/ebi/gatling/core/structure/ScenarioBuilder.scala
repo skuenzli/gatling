@@ -15,21 +15,19 @@
  */
 package com.excilys.ebi.gatling.core.structure
 
-import java.util.concurrent.CountDownLatch
-
-import com.excilys.ebi.gatling.core.action.builder.EndActionBuilder.endActionBuilder
-import com.excilys.ebi.gatling.core.action.builder.StartActionBuilder.startActionBuilder
-import com.excilys.ebi.gatling.core.action.builder.ActionBuilder
-import com.excilys.ebi.gatling.core.config.ProtocolConfigurationRegistry
-import com.excilys.ebi.gatling.core.scenario.configuration.ScenarioConfigurationBuilder
+import com.excilys.ebi.gatling.core.action.builder.{ ActionBuilder, UserActionBuilder }
 import com.excilys.ebi.gatling.core.scenario.Scenario
+import com.excilys.ebi.gatling.core.scenario.configuration.{ ConfiguredScenarioBuilder, ScenarioConfiguration }
 
 /**
  * ScenarioBuilder class companion
  */
 object ScenarioBuilder {
-	def scenario(scenarioName: String) = new ScenarioBuilder(scenarioName, Nil).start
+	def scenario(scenarioName: String): ScenarioBuilder = new ScenarioBuilder(scenarioName, List(UserActionBuilder.start))
+	
+	implicit def configureScenario(scenarioBuilder: ScenarioBuilder) = new ConfiguredScenarioBuilder(scenarioBuilder)
 }
+
 /**
  * The scenario builder is used in the DSL to define the scenario
  *
@@ -37,37 +35,22 @@ object ScenarioBuilder {
  * @param actionBuilders the list of all the actions that compose the scenario
  * @param next the action that will be executed after this scenario (that can be a chain as well)
  */
-class ScenarioBuilder(val name: String, actionBuilders: List[ActionBuilder]) extends AbstractStructureBuilder[ScenarioBuilder](actionBuilders) {
+class ScenarioBuilder(name: String, val actionBuilders: List[ActionBuilder]) extends AbstractStructureBuilder[ScenarioBuilder] {
 
-	private[core] def newInstance(actionBuilders: List[ActionBuilder]) = {
-		new ScenarioBuilder(name, actionBuilders)
-	}
+	private[core] def newInstance(actionBuilders: List[ActionBuilder]) = new ScenarioBuilder(name, actionBuilders)
 
 	private[core] def getInstance = this
-
-	def configure = new ScenarioConfigurationBuilder(this)
-
-	/**
-	 * Method that should not be used in a script. It adds a StartAction to the scenario
-	 *
-	 * @return a new builder with its first action added
-	 */
-	private[core] def start: ScenarioBuilder = newInstance(startActionBuilder :: actionBuilders)
-
-	/**
-	 * Method that should not be used in a script. It adds an EndAction that will
-	 * tell the engine that the scenario is finished
-	 *
-	 * @param latch the countdown latch used to stop the engine
-	 * @return a new builder with its last action added
-	 */
-	private[core] def end(latch: CountDownLatch): ScenarioBuilder = newInstance(endActionBuilder(latch) :: actionBuilders)
 
 	/**
 	 * Method that actually builds the scenario
 	 *
-	 * @param scenarioId the id of the current scenario
-	 * @return the first action of the scenario to be executed
+	 * @param scenarioConfiguration the configuration of the scenario
+	 * @return the scenario
 	 */
-	private[core] def build(protocolConfigurationRegistry: ProtocolConfigurationRegistry) = new Scenario(name, buildChainedActions(null, protocolConfigurationRegistry))
+	private[core] def build(scenarioConfiguration: ScenarioConfiguration): Scenario = {
+
+		val endingScenarioBuilder = newInstance(UserActionBuilder.end :: actionBuilders)
+		val entryPoint = endingScenarioBuilder.buildChainedActions(null, scenarioConfiguration.protocolRegistry)
+		new Scenario(name, entryPoint, scenarioConfiguration)
+	}
 }

@@ -16,19 +16,19 @@
 package com.excilys.ebi.gatling.core.action
 
 import com.excilys.ebi.gatling.core.session.Session
-import com.excilys.ebi.gatling.core.util.ClassSimpleNameToString
 
-import akka.actor.Actor
+import akka.actor.ActorRef
 
 /**
  * Top level abstraction in charge or executing concrete actions along a scenario, for example sending an HTTP request.
  * It is implemented as an Akka Actor that receives Session messages.
  */
-abstract class Action extends Actor with ClassSimpleNameToString {
+trait Action extends BaseActor {
+
+	def next: ActorRef
 
 	def receive = {
 		case session: Session => execute(session)
-		case _ => throw new IllegalArgumentException("Unknown message type")
 	}
 
 	/**
@@ -38,4 +38,12 @@ abstract class Action extends Actor with ClassSimpleNameToString {
 	 * @return Nothing
 	 */
 	def execute(session: Session)
+
+	override def preRestart(reason: Throwable, message: Option[Any]) {
+		error("Action " + this + " crashed, forwarding user to next one", reason)
+		message match {
+			case Some(session: Session) if (next != null) => next ! session.setFailed
+			case _ =>
+		}
+	}
 }

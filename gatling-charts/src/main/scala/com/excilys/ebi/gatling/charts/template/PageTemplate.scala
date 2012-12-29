@@ -18,35 +18,49 @@ package com.excilys.ebi.gatling.charts.template
 import org.fusesource.scalate.TemplateEngine
 
 import com.excilys.ebi.gatling.charts.component.Component
-import com.excilys.ebi.gatling.charts.config.ChartsFiles.{ MENU_FILE, JQUERY_FILE, ALL_SESSIONS_FILE, GATLING_TEMPLATE_LAYOUT_FILE_URL }
+import com.excilys.ebi.gatling.charts.config.ChartsFiles.{ ALL_SESSIONS_FILE, BOOTSTRAP_FILE, GATLING_JS_FILE, GATLING_TEMPLATE_LAYOUT_FILE_URL, JQUERY_FILE, MENU_FILE, STATS_JS_FILE }
 import com.excilys.ebi.gatling.core.result.message.RunRecord
 
 object PageTemplate {
-	val TEMPLATE_ENGINE = new TemplateEngine
-	TEMPLATE_ENGINE.allowReload = false
-	TEMPLATE_ENGINE.escapeMarkup = false
+	val TEMPLATE_ENGINE = {
+		val engine = new TemplateEngine
+		engine.allowReload = false
+		engine.escapeMarkup = false
+		engine
+	}
 
 	private var runRecord: RunRecord = _
-	def setRunInfo(runRecord: RunRecord) { PageTemplate.runRecord = runRecord }
+	private var runStart: Long = _
+	private var runEnd: Long = _
+
+	def setRunInfo(runRecord: RunRecord,runStart: Long,runEnd: Long) {
+		PageTemplate.runRecord = runRecord
+		PageTemplate.runStart = runStart
+		PageTemplate.runEnd = runEnd
+	}
 }
 
 abstract class PageTemplate(title: String, isDetails: Boolean, components: Component*) {
 
-	val jsFiles = (Seq(JQUERY_FILE, MENU_FILE, ALL_SESSIONS_FILE) ++ getAdditionnalJSFiles).distinct
+	val jsFiles: Seq[String] = (Seq(JQUERY_FILE, BOOTSTRAP_FILE, GATLING_JS_FILE, MENU_FILE, ALL_SESSIONS_FILE, STATS_JS_FILE) ++ getAdditionnalJSFiles).distinct
 
 	def getContent: String = components.map(_.getHTMLContent).mkString
 
 	def getJavascript: String = components.map(_.getJavascriptContent).mkString
 
-	def getAdditionnalJSFiles = components.flatMap(_.getJavascriptFiles)
+	def getAdditionnalJSFiles: Seq[String] = components.flatMap(_.getJavascriptFiles)
+
+	def getAttributes: Map[String, Any] =
+		Map("jsFiles" -> jsFiles,
+			"pageTitle" -> title,
+			"pageContent" -> getContent,
+			"javascript" -> getJavascript,
+			"isDetails" -> isDetails,
+			"runRecord" -> PageTemplate.runRecord,
+			"runStart" -> PageTemplate.runStart,
+			"runEnd" -> PageTemplate.runEnd)
 
 	def getOutput: String = {
-		PageTemplate.TEMPLATE_ENGINE.layout(GATLING_TEMPLATE_LAYOUT_FILE_URL,
-			Map("jsFiles" -> jsFiles,
-				"pageTitle" -> title,
-				"pageContent" -> getContent,
-				"javascript" -> getJavascript,
-				"isDetails" -> isDetails,
-				"runRecord" -> PageTemplate.runRecord))
+		PageTemplate.TEMPLATE_ENGINE.layout(GATLING_TEMPLATE_LAYOUT_FILE_URL, getAttributes)
 	}
 }

@@ -16,22 +16,31 @@
 package com.excilys.ebi.gatling.http.check.body
 
 import com.excilys.ebi.gatling.core.check.CheckContext.getOrUpdateCheckContextAttribute
-import com.excilys.ebi.gatling.core.check.extractor.css.CssExtractor
 import com.excilys.ebi.gatling.core.check.ExtractorFactory
-import com.excilys.ebi.gatling.core.session.EvaluatableString
-import com.ning.http.client.Response
+import com.excilys.ebi.gatling.core.check.extractor.css.CssExtractor
+import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
+import com.excilys.ebi.gatling.core.session.Expression
+import com.excilys.ebi.gatling.http.check.HttpMultipleCheckBuilder
+import com.excilys.ebi.gatling.http.request.HttpPhase.CompletePageReceived
+import com.excilys.ebi.gatling.http.response.ExtendedResponse
 
 object HttpBodyCssCheckBuilder {
 
-	def css(selector: EvaluatableString) = new HttpBodyCheckBuilder(findExtractorFactory, findAllExtractorFactory, countExtractorFactory, selector)
-
 	private val HTTP_BODY_REGEX_EXTRACTOR_CONTEXT_KEY = "HttpBodyCssExtractor"
 
-	private def getCachedExtractor(response: Response) = getOrUpdateCheckContextAttribute(HTTP_BODY_REGEX_EXTRACTOR_CONTEXT_KEY, new CssExtractor(response.getResponseBody))
+	private def getCachedExtractor(response: ExtendedResponse) = getOrUpdateCheckContextAttribute(HTTP_BODY_REGEX_EXTRACTOR_CONTEXT_KEY, new CssExtractor(response.getResponseBody(configuration.simulation.encoding)))
 
-	private def findExtractorFactory(occurrence: Int): ExtractorFactory[Response, String, String] = (response: Response) => getCachedExtractor(response).extractOne(occurrence)
+	private def newFindExtractorFactory(nodeAttribute: Option[String])(occurrence: Int): ExtractorFactory[ExtendedResponse, String, String] = (response: ExtendedResponse) => getCachedExtractor(response).extractOne(occurrence, nodeAttribute)
 
-	private val findAllExtractorFactory: ExtractorFactory[Response, String, Seq[String]] = (response: Response) => getCachedExtractor(response).extractMultiple
+	private def newFindAllExtractorFactory(nodeAttribute: Option[String]): ExtractorFactory[ExtendedResponse, String, Seq[String]] = (response: ExtendedResponse) => getCachedExtractor(response).extractMultiple(nodeAttribute)
 
-	private val countExtractorFactory: ExtractorFactory[Response, String, Int] = (response: Response) => getCachedExtractor(response).count
+	private def newCountExtractorFactory(nodeAttribute: Option[String]): ExtractorFactory[ExtendedResponse, String, Int] = (response: ExtendedResponse) => getCachedExtractor(response).count(nodeAttribute)
+
+	def css(selector: Expression[String], nodeAttribute: Option[String]) = {
+		val findExtractorFactory = newFindExtractorFactory(nodeAttribute) _
+		val findAllExtractorFactory = newFindAllExtractorFactory(nodeAttribute)
+		val countExtractorFactory = newCountExtractorFactory(nodeAttribute)
+
+		new HttpMultipleCheckBuilder(findExtractorFactory, findAllExtractorFactory, countExtractorFactory, selector, CompletePageReceived)
+	}
 }

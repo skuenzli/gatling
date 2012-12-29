@@ -13,21 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.excilys.ebi.gatling.recorder.http.handler;
+package com.excilys.ebi.gatling.recorder.http.handler
 
-import java.net.{ URI, InetSocketAddress }
+import java.net.{ InetSocketAddress, URI }
 
-import org.jboss.netty.channel.{ ChannelHandlerContext, ChannelFuture }
+import org.jboss.netty.channel.{ ChannelFuture, ChannelHandlerContext }
 import org.jboss.netty.handler.codec.http.HttpRequest
 
 import com.excilys.ebi.gatling.recorder.config.ProxyConfig
+import com.excilys.ebi.gatling.recorder.controller.RecorderController
 import com.excilys.ebi.gatling.recorder.http.channel.BootstrapFactory.newClientBootstrap
 
-class BrowserHttpRequestHandler(proxyConfig: ProxyConfig) extends AbstractBrowserRequestHandler(proxyConfig: ProxyConfig) {
+class BrowserHttpRequestHandler(controller: RecorderController, proxyConfig: ProxyConfig) extends AbstractBrowserRequestHandler(controller, proxyConfig) {
 
-	def connectToServerOnBrowserRequestReceived(ctx: ChannelHandlerContext, request: HttpRequest): ChannelFuture = {
+	def propagateRequest(requestContext: ChannelHandlerContext, request: HttpRequest) {
 
-		val bootstrap = newClientBootstrap(ctx, request, false)
+		val bootstrap = newClientBootstrap(controller, requestContext, request, false)
 
 		val (proxyHost, proxyPort) = (for {
 			host <- proxyConfig.host
@@ -39,6 +40,8 @@ class BrowserHttpRequestHandler(proxyConfig: ProxyConfig) extends AbstractBrowse
 				(uri.getHost, port)
 			}
 
-		bootstrap.connect(new InetSocketAddress(proxyHost, proxyPort))
+		bootstrap
+			.connect(new InetSocketAddress(proxyHost, proxyPort))
+			.addListener { future: ChannelFuture => future.getChannel.write(buildRequestWithRelativeURI(request)) }
 	}
 }

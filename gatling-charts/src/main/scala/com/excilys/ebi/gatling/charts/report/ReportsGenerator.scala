@@ -15,86 +15,43 @@
  */
 package com.excilys.ebi.gatling.charts.report
 
-import java.net.URL
+import scala.tools.nsc.io.Path
 
-import scala.collection.mutable.LinkedHashSet
-
-import com.excilys.ebi.gatling.charts.component.impl.ComponentLibraryImpl
 import com.excilys.ebi.gatling.charts.component.ComponentLibrary
-import com.excilys.ebi.gatling.charts.config.ChartsFiles.menuFile
-import com.excilys.ebi.gatling.charts.template.{ PageTemplate, MenuTemplate }
-import com.excilys.ebi.gatling.core.config.GatlingFiles.{ styleFolder, jsFolder, GATLING_ASSETS_STYLE_PACKAGE, GATLING_ASSETS_JS_PACKAGE }
+import com.excilys.ebi.gatling.charts.config.ChartsFiles.{ globalFile, menuFile }
+import com.excilys.ebi.gatling.charts.template.{ MenuTemplate, PageTemplate }
+import com.excilys.ebi.gatling.core.config.GatlingFiles.{ GATLING_ASSETS_JS_PACKAGE, GATLING_ASSETS_STYLE_PACKAGE, jsDirectory, styleDirectory }
 import com.excilys.ebi.gatling.core.result.reader.DataReader
-import com.excilys.ebi.gatling.core.util.FileHelper.{ formatToFilename, HTML_EXTENSION }
 import com.excilys.ebi.gatling.core.util.ScanHelper.deepCopyPackageContent
 
 import grizzled.slf4j.Logging
 
 object ReportsGenerator extends Logging {
 
-	val STATIC_LIBRARY_BINDER_PATH = "com/excilys/ebi/gatling/charts/component/impl/ComponentLibraryImpl.class"
+	def generateFor(outputDirectoryName: String, dataReader: DataReader): Path = {
 
-	val componentLibrary: ComponentLibrary = {
-		val paths = Option(this.getClass.getClassLoader) match {
-			case Some(classloader) => classloader.getResources(STATIC_LIBRARY_BINDER_PATH)
-			case None => ClassLoader.getSystemResources(STATIC_LIBRARY_BINDER_PATH)
-		}
+		def generateMenu = new TemplateWriter(menuFile(outputDirectoryName)).writeToFile(new MenuTemplate().getOutput)
 
-		// LinkedHashSet appropriate here because it preserves insertion order during iteration
-		val implementationSet = new LinkedHashSet[URL]
-		while (paths.hasMoreElements) {
-			val path = paths.nextElement.asInstanceOf[URL]
-			implementationSet += path
-		}
-		if (implementationSet.size > 1) {
-			warn("Class path contains multiple ComponentLibrary bindings")
-			implementationSet.foreach(url => warn("Found ComponentLibrary binding in " + url))
-		}
-
-		new ComponentLibraryImpl
-	}
-
-	def generateFor(runUuid: String) = {
-
-		val dataReader = DataReader.newInstance(runUuid)
-
-		def generateMenu {
-
-			val maxLength = 50
-
-			val requestLinks: Iterable[(String, Option[String], String)] = dataReader.requestNames.map {
-				requestName =>
-					val title = if (requestName.length > maxLength) Some(requestName.substring(8)) else None
-					val printedName = if (requestName.length > maxLength) requestName.substring(8, maxLength) + "..." else requestName.substring(8)
-					(formatToFilename(requestName) + HTML_EXTENSION, title, printedName)
-			}
-
-			val template = new MenuTemplate(requestLinks)
-
-			new TemplateWriter(menuFile(runUuid)).writeToFile(template.getOutput)
-		}
+		def generateStats = new StatsReportGenerator(outputDirectoryName, dataReader, ComponentLibrary.instance).generate
 
 		def copyAssets {
-			deepCopyPackageContent(GATLING_ASSETS_STYLE_PACKAGE, styleFolder(runUuid))
-			deepCopyPackageContent(GATLING_ASSETS_JS_PACKAGE, jsFolder(runUuid))
+			deepCopyPackageContent(GATLING_ASSETS_STYLE_PACKAGE, styleDirectory(outputDirectoryName))
+			deepCopyPackageContent(GATLING_ASSETS_JS_PACKAGE, jsDirectory(outputDirectoryName))
 		}
 
-		if (dataReader.requestNames.isEmpty) {
-			warn("There were no requests sent during the simulation, reports won't be generated")
-			false
+		if (dataReader.groupsAndRequests.filter(_._2.isDefined).isEmpty) throw new UnsupportedOperationException("There were no requests sent during the simulation, reports won't be generated")
 
-		} else {
-			val reportGenerators =
-				List(new AllSessionsReportGenerator(runUuid, dataReader, componentLibrary),
-					new GlobalReportGenerator(runUuid, dataReader, componentLibrary),
-					new RequestDetailsReportGenerator(runUuid, dataReader, componentLibrary))
+		val reportGenerators =
+			List(new AllSessionsReportGenerator(outputDirectoryName, dataReader, ComponentLibrary.instance),
+				new GlobalReportGenerator(outputDirectoryName, dataReader, ComponentLibrary.instance),
+				new RequestDetailsReportGenerator(outputDirectoryName, dataReader, ComponentLibrary.instance))
 
-			copyAssets
-			generateMenu
-			PageTemplate.setRunInfo(dataReader.runRecord)
-			reportGenerators.foreach(_.generate)
-			true
-		}
+		copyAssets
+		generateMenu
+		PageTemplate.setRunInfo(dataReader.runRecord,dataReader.runStart,dataReader.runEnd)
+		reportGenerators.foreach(_.generate)
+		generateStats
+
+		globalFile(outputDirectoryName)
 	}
-
 }

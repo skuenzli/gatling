@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * 		http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,116 +15,225 @@
  */
 package com.excilys.ebi.gatling.charts.result.reader
 
+import java.io.FileInputStream
+import java.io.InputStream
 import java.util.regex.Pattern
 
 import scala.collection.mutable
 import scala.io.Source
-import scala.tools.nsc.io.{ File, Directory }
 
-import com.excilys.ebi.gatling.charts.result.reader.FileDataReader.TABULATION_PATTERN
-import com.excilys.ebi.gatling.charts.util.StatisticsHelper
-import com.excilys.ebi.gatling.core.action.EndAction.END_OF_SCENARIO
-import com.excilys.ebi.gatling.core.action.StartAction.START_OF_SCENARIO
+import com.excilys.ebi.gatling.charts.result.reader.stats.StatsHelper
 import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
 import com.excilys.ebi.gatling.core.config.GatlingFiles.simulationLogDirectory
-import com.excilys.ebi.gatling.core.result.message.RecordType.{ RUN, ACTION }
-import com.excilys.ebi.gatling.core.result.message.RequestStatus.RequestStatus
-import com.excilys.ebi.gatling.core.result.message.{ RunRecord, RequestStatus }
-import com.excilys.ebi.gatling.core.result.reader.{ DataReader, ChartRequestRecord }
+import com.excilys.ebi.gatling.core.result.Group
+import com.excilys.ebi.gatling.core.result.message.RecordType.{ ACTION, GROUP, RUN, SCENARIO }
+import com.excilys.ebi.gatling.core.result.message.{ KO, OK, RequestStatus }
+import com.excilys.ebi.gatling.core.result.message.RunRecord
+import com.excilys.ebi.gatling.core.result.reader.{ DataReader, GeneralStats }
 import com.excilys.ebi.gatling.core.util.DateHelper.parseTimestampString
-import com.excilys.ebi.gatling.core.util.FileHelper.TABULATION_SEPARATOR_STRING
+import com.excilys.ebi.gatling.core.util.FileHelper.TABULATION_SEPARATOR
 
 import grizzled.slf4j.Logging
 
 object FileDataReader {
-	val TABULATION_PATTERN = Pattern.compile(TABULATION_SEPARATOR_STRING)
+	val LOG_STEP = 100000
+	val SEC_MILLISEC_RATIO = 1000.0
+	val NO_PLOT_MAGIC_VALUE = -1L
+	val TABULATION_PATTERN = Pattern.compile(TABULATION_SEPARATOR)
 	val SIMULATION_FILES_NAME_PATTERN = """.*\.log"""
+	val ACTION_RECORD_LENGTH = 9
+	val RUN_RECORD_LENGTH = 4
+	val GROUP_RECORD_LENGTH = 6
+	val SCENARIO_RECORD_LENGTH = 5
 }
 
 class FileDataReader(runUuid: String) extends DataReader(runUuid) with Logging {
 
-	val (allRunRecords, requestRecords, requestNames, scenarioNames): (Seq[RunRecord], Seq[ChartRequestRecord], Seq[String], Seq[String]) = {
+	private def multipleFileIterator(streams: Seq[InputStream]): Iterator[String] = streams.map(Source.fromInputStream(_, configuration.simulation.encoding).getLines()).reduce((first, second) => first ++ second)
 
-		val runRecords = new mutable.ArrayBuffer[RunRecord]
-		val requestRecords = new mutable.ArrayBuffer[ChartRequestRecord]
-		val requestNames = mutable.Map[String, Long]()
-		val scenarioNames = mutable.Map[String, Long]()
+	val inputFiles = simulationLogDirectory(runUuid, create = false).files
+		.collect { case file if (file.name.matches(FileDataReader.SIMULATION_FILES_NAME_PATTERN)) => file.jfile }
+		.toSeq
 
-		def readFile(file: File) {
-			for (line <- Source.fromFile(file.jfile, configuration.encoding).getLines) {
-				TABULATION_PATTERN.split(line, 0).toList match {
-					case RUN :: runDate :: runId :: runDescription :: l =>
-						runRecords += RunRecord(parseTimestampString(runDate), runId, runDescription)
-					case ACTION :: scenarioName :: userId :: requestName :: executionStartDate :: executionEndDate :: requestSendingEndDate :: responseReceivingStartDate :: resultStatus :: l =>
-						val executionStartDateLong = executionStartDate.toLong
-						val record = ChartRequestRecord(scenarioName, userId.toInt, requestName, executionStartDateLong, executionEndDate.toLong, requestSendingEndDate.toLong, responseReceivingStartDate.toLong, RequestStatus.withName(resultStatus))
+	require(!inputFiles.isEmpty, "simulation directory doesn't contain any log file.")
 
-						if (record.responseTime >= 0) {
-							requestRecords += record
-							if (requestName != START_OF_SCENARIO && requestName != END_OF_SCENARIO) {
+	private def doWithInputFiles[T](f: Iterator[String] => T): T = {
 
-								val entryTime = requestNames.getOrElse(requestName, Long.MaxValue)
-								if (executionStartDateLong < entryTime)
-									requestNames += (record.requestName -> executionStartDateLong)
-							}
+		val streams = inputFiles.map(new FileInputStream(_))
+		try f(multipleFileIterator(streams))
+		finally streams.foreach(_.close)
+	}
 
-							val entryTime = scenarioNames.getOrElse(scenarioName, Long.MaxValue)
-							if (executionStartDateLong < entryTime)
-								scenarioNames += (record.scenarioName -> executionStartDateLong)
-						} else
-							logger.info("Point is irrelevant, probably due to currentTimeMillis unprecision, skipping it" + record.requestName + " at " + record.executionStartDateNoMillis)
+	private def preProcess(records: Iterator[String]) = {
+		val (actions, runs) = records.map(FileDataReader.TABULATION_PATTERN.split).filter(array => array.head == ACTION || array.head == RUN).partition(_.head == ACTION)
 
-					case record => logger.warn("Malformed line, skipping it : " + record)
+		val (runStart, runEnd, totalRequestsNumber) = actions
+			.filter(_.length >= FileDataReader.ACTION_RECORD_LENGTH)
+			.foldLeft((Long.MaxValue, Long.MinValue, 0L)) {
+				(accumulator, strings) =>
+					val (min, max, count) = accumulator
+
+					if (count % FileDataReader.LOG_STEP == 0) info("First pass, read " + count + " lines")
+
+					(math.min(min, strings(4).toLong), math.max(max, strings(7).toLong), count + 1)
+			}
+
+		val runRecords = mutable.ListBuffer[RunRecord]()
+		runs
+			.filter(_.length >= FileDataReader.RUN_RECORD_LENGTH)
+			.foreach(strings => runRecords += RunRecord(parseTimestampString(strings(1)), strings(2), strings(3).trim))
+
+		info("Read " + totalRequestsNumber + " lines (finished)")
+
+		(runStart, runEnd, runRecords.head)
+	}
+
+	val (runStart, runEnd, runRecord) = doWithInputFiles(preProcess)
+
+	val step = StatsHelper.step(math.floor(runStart / FileDataReader.SEC_MILLISEC_RATIO).toInt, math.ceil(runEnd / FileDataReader.SEC_MILLISEC_RATIO).toInt, configuration.charting.maxPlotsPerSeries) * FileDataReader.SEC_MILLISEC_RATIO
+	val bucketFunction = StatsHelper.bucket(_: Int, 0, (runEnd - runStart).toInt, step, step / 2)
+	val buckets = StatsHelper.bucketsList(0, (runEnd - runStart).toInt, step)
+
+	private def process(bucketFunction: Int => Int)(records: Iterator[String]): ResultsHolder = {
+
+		val resultsHolder = new ResultsHolder(runStart, runEnd)
+
+		var count = 0
+
+		records
+			.collect { case line if (line.startsWith(ACTION) || line.startsWith(GROUP) || line.startsWith(SCENARIO)) => FileDataReader.TABULATION_PATTERN.split(line) }
+			.filter(_.length >= 1)
+			.foreach { array =>
+				array(0) match {
+					case ACTION if (array.length >= FileDataReader.ACTION_RECORD_LENGTH) => resultsHolder.addActionRecord(ActionRecord(array, bucketFunction, runStart))
+					case GROUP if (array.length >= FileDataReader.GROUP_RECORD_LENGTH) => resultsHolder.addGroupRecord(GroupRecord(array, bucketFunction, runStart))
+					case SCENARIO if (array.length >= FileDataReader.SCENARIO_RECORD_LENGTH) => resultsHolder.addScenarioRecord(ScenarioRecord(array, bucketFunction, runStart))
 				}
+			}
+
+		info("Read " + count + " lines (finished)")
+
+		resultsHolder
+	}
+
+	val resultsHolder = doWithInputFiles(process(bucketFunction))
+
+	def groupsAndRequests: List[(Option[Group], Option[String])] =
+		resultsHolder.groupAndRequestsNameBuffer.map.toList.map {
+			case ((group, Some(request)), time) => ((group, Some(request)), (time, group.map(_.groups.length + 1).getOrElse(0)))
+			case ((Some(group), None), time) => ((Some(group), None), (time, group.groups.length))
+			case _ => throw new UnsupportedOperationException
+		}.sortBy(_._2).map(_._1)
+
+	def scenarioNames: List[String] = resultsHolder.scenarioNameBuffer
+		.map
+		.toList
+		.sortBy(_._2)
+		.map(_._1)
+
+	def numberOfActiveSessionsPerSecond(scenarioName: Option[String]): Seq[(Int, Int)] = resultsHolder
+		.getSessionDeltaPerSecBuffers(scenarioName)
+		.compute(buckets)
+
+	def numberOfRequestsPerSecond(status: Option[RequestStatus], requestName: Option[String], group: Option[Group]): Seq[(Int, Int)] = resultsHolder
+		.getRequestsPerSecBuffer(requestName, group, status).map
+		.toList
+		.map {
+			case (bucket, count) => (bucket, math.round(count / step * FileDataReader.SEC_MILLISEC_RATIO).toInt)
+		}
+		.sorted
+
+	def numberOfTransactionsPerSecond(status: Option[RequestStatus], requestName: Option[String], group: Option[Group]): Seq[(Int, Int)] = resultsHolder
+		.getTransactionsPerSecBuffer(requestName, group, status).map
+		.toList
+		.map {
+			case (bucket, count) => (bucket, math.round(count / step * FileDataReader.SEC_MILLISEC_RATIO).toInt)
+		}
+		.sorted
+
+	def responseTimeDistribution(slotsNumber: Int, requestName: Option[String], group: Option[Group]): (Seq[(Int, Int)], Seq[(Int, Int)]) = {
+
+		// get main and max for request/all status
+		val requestStats = resultsHolder.getGeneralStatsBuffers(requestName, group, None).compute
+		val min = requestStats.min
+		val max = requestStats.max
+
+		val size = requestStats.count
+		val step = StatsHelper.step(min, max, 100)
+		val demiStep = step / 2
+		val buckets = StatsHelper.bucketsList(min, max, step)
+		val ok = resultsHolder.getGeneralStatsBuffers(requestName, group, Some(OK)).map.toList
+		val ko = resultsHolder.getGeneralStatsBuffers(requestName, group, Some(KO)).map.toList
+
+		val bucketFunction = StatsHelper.bucket(_: Int, min, max, step, demiStep)
+
+		def process(buffer: List[(Int, Int)]): List[(Int, Int)] = {
+
+			val bucketsWithValues = buffer
+				.map(record => (bucketFunction(record._1), record))
+				.groupBy(_._1)
+				.map {
+					case (responseTimeBucket, recordList) =>
+
+						val sizeBucket = recordList.foldLeft(0) {
+							(partialSize, record) => partialSize + record._2._2
+						}
+
+						(responseTimeBucket, math.round(sizeBucket * 100.0 / size).toInt)
+				}
+				.toMap
+
+			buckets.map {
+				bucket => (bucket, bucketsWithValues.getOrElse(bucket, 0))
 			}
 		}
 
-		simulationLogDirectory(runUuid).toDirectory.files.filter(_.jfile.getName.matches(FileDataReader.SIMULATION_FILES_NAME_PATTERN)).foreach(readFile(_))
-
-		val sortedRequestNames = requestNames.toSeq.sortBy(_._2).map(_._1)
-		val sortedScenarioNames = scenarioNames.toSeq.sortBy(_._2).map(_._1)
-
-		(runRecords, requestRecords, sortedRequestNames, sortedScenarioNames)
+		(process(ok), process(ko))
 	}
 
-	val runRecord = {
-		if (allRunRecords.size != 1) warn("Expecting one and only one RunRecord")
-		allRunRecords.head
+	def generalStats(status: Option[RequestStatus], requestName: Option[String], group: Option[Group]): GeneralStats = resultsHolder
+		.getGeneralStatsBuffers(requestName, group, status)
+		.compute
+
+	def groupStats(group: Option[Group]) = resultsHolder.getStatsGroupBuffer(group)
+
+	def numberOfRequestInResponseTimeRange(requestName: Option[String], group: Option[Group]): Seq[(String, Int)] = {
+
+		val counts = resultsHolder.getResponseTimeRangeBuffers(requestName, group)
+		val lowerBound = configuration.charting.indicators.lowerBound
+		val higherBound = configuration.charting.indicators.higherBound
+
+		List(("t < " + lowerBound + " ms", counts.low),
+			(lowerBound + " ms < t < " + higherBound + " ms", counts.middle),
+			("t > " + higherBound + " ms", counts.high),
+			("failed", counts.ko))
 	}
 
-	def numberOfActiveSessionsPerSecond(scenarioName: Option[String] = None): Seq[(Long, Int)] =
-		StatisticsHelper.numberOfActiveSessionsPerSecond(requestRecords, scenarioName)
+	def responseTimeGroupByExecutionStartDate(status: RequestStatus, requestName: Option[String], group: Option[Group]): Seq[(Int, (Int, Int))] = resultsHolder
+		.getResponseTimePerSecBuffers(requestName, group, Some(status))
+		.map
+		.toList
+		.sorted
 
-	def numberOfEventsPerSecond(event: ChartRequestRecord => Long, status: Option[RequestStatus] = None, requestName: Option[String] = None): Map[Long, Int] =
-		StatisticsHelper.numberOfEventsPerSecond(requestRecords, event, status, requestName)
+	def latencyGroupByExecutionStartDate(status: RequestStatus, requestName: Option[String], group: Option[Group]): Seq[(Int, (Int, Int))] = resultsHolder
+		.getLatencyPerSecBuffers(requestName, group, Some(status))
+		.map
+		.toList
+		.sorted
 
-	def responseTimeDistribution(slotsNumber: Int, requestName: Option[String] = None) =
-		StatisticsHelper.responseTimeDistribution(requestRecords, slotsNumber, requestName)
+	def responseTimeAgainstGlobalNumberOfRequestsPerSec(status: RequestStatus, requestName: Option[String], group: Option[Group]): Seq[(Int, Int)] = {
 
-	def percentiles(percentage1: Double, percentage2: Double, status: Option[RequestStatus] = None, requestName: Option[String] = None): (Long, Long) =
-		StatisticsHelper.percentiles(requestRecords, percentage1, percentage2, status, requestName)
+		val globalCountsByBucket = resultsHolder.getRequestsPerSecBuffer(None, None, None).map
 
-	def countRequests(status: Option[RequestStatus] = None, requestName: Option[String] = None): Int =
-		StatisticsHelper.countRequests(requestRecords, status, requestName)
-
-	def minResponseTime(status: Option[RequestStatus] = None, requestName: Option[String] = None): Long =
-		StatisticsHelper.minResponseTime(requestRecords, status, requestName)
-
-	def maxResponseTime(status: Option[RequestStatus] = None, requestName: Option[String] = None): Long =
-		StatisticsHelper.maxResponseTime(requestRecords, status, requestName)
-
-	def meanResponseTime(status: Option[RequestStatus], requestName: Option[String]): Long =
-		StatisticsHelper.meanResponseTime(requestRecords, status, requestName)
-
-	def meanLatency(status: Option[RequestStatus], requestName: Option[String]): Long =
-		StatisticsHelper.meanLatency(requestRecords, status, requestName)
-
-	def responseTimeStandardDeviation(status: Option[RequestStatus] = None, requestName: Option[String] = None): Long =
-		StatisticsHelper.responseTimeStandardDeviation(requestRecords, status, requestName): Long
-
-	def numberOfRequestInResponseTimeRange(lowerBound: Int, higherBound: Int, requestName: Option[String] = None): Seq[(String, Int)] =
-		StatisticsHelper.numberOfRequestInResponseTimeRange(requestRecords, lowerBound, higherBound, requestName)
-
-	def requestRecordsGroupByExecutionStartDate(requestName: String): Seq[(Long, Seq[ChartRequestRecord])] =
-		StatisticsHelper.requestRecordsGroupByExecutionStartDate(requestRecords, requestName)
+		resultsHolder
+			.getResponseTimePerSecBuffers(requestName, group, Some(status))
+			.map
+			.toList
+			.map {
+				case (bucket, responseTimes) =>
+					val (_, max) = responseTimes
+					val count = globalCountsByBucket(bucket)
+					(math.round(count / step * 1000).toInt, max)
+			}.sorted
+	}
 }

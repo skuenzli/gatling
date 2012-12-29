@@ -19,7 +19,7 @@ import java.util.regex.{ Pattern, Matcher }
 
 import scala.annotation.tailrec
 
-import com.excilys.ebi.gatling.core.check.extractor.Extractor.{ toOption, seqToOption }
+import com.excilys.ebi.gatling.core.check.extractor.Extractor
 
 /**
  * A built-in extractor for extracting values with Regular Expressions
@@ -27,17 +27,7 @@ import com.excilys.ebi.gatling.core.check.extractor.Extractor.{ toOption, seqToO
  * @constructor creates a new RegExpExtractor
  * @param textContent the text where the search will be made
  */
-class RegexExtractor(textContent: String) {
-
-	@tailrec
-	private def findRec(matcher: Matcher, countDown: Int): Boolean = {
-		if (!matcher.find)
-			false
-		else if (countDown == 0)
-			true
-		else
-			findRec(matcher, countDown - 1)
-	}
+class RegexExtractor(textContent: String) extends Extractor {
 
 	/**
 	 * The actual extraction happens here. The regular expression is compiled and the occurrence-th
@@ -50,7 +40,17 @@ class RegexExtractor(textContent: String) {
 
 		val matcher = Pattern.compile(expression).matcher(textContent)
 
-		if (findRec(matcher, occurrence))
+		@tailrec
+		def findRec(countDown: Int): Boolean = {
+			if (!matcher.find)
+				false
+			else if (countDown == 0)
+				true
+			else
+				findRec(countDown - 1)
+		}
+
+		if (findRec(occurrence))
 			// if a group is specified, return the group 1, else return group 0 (ie the match)
 			new String(matcher.group(matcher.groupCount.min(1)))
 		else

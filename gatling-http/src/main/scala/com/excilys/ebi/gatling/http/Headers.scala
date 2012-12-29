@@ -40,6 +40,7 @@ object Headers {
 		val CONTENT_TYPE = "Content-Type"
 		val COOKIE = "Cookie"
 		val DATE = "Date"
+		val DO_NOT_TRACK = "DNT"
 		val ETAG = "ETag"
 		val EXPECT = "Expect"
 		val EXPIRES = "Expires"
@@ -115,5 +116,6 @@ object Headers {
 		val VIDEO_OGG = "video/ogg"
 		val VIDEO_WEBM = "video/webm"
 		val VIDEO_QUICKTIME = "video/quicktime"
+		val NO_CACHE = "no-cache"
 	}
 }

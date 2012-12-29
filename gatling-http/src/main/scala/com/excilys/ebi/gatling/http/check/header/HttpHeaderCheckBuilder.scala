@@ -15,56 +15,56 @@
  */
 package com.excilys.ebi.gatling.http.check.header
 
+import java.net.URLDecoder
+import java.util.Collections.emptyList
+
 import scala.collection.JavaConversions.asScalaBuffer
 
-import com.excilys.ebi.gatling.core.check.extractor.Extractor.{ toOption, seqToOption }
-import com.excilys.ebi.gatling.core.check.{ ExtractorFactory, MultipleExtractorCheckBuilder, MatcherCheckBuilder }
-import com.excilys.ebi.gatling.core.session.EvaluatableString
-import com.excilys.ebi.gatling.http.check.header.HttpHeaderCheckBuilder.{ findExtractorFactory, findAllExtractorFactory, countExtractorFactory }
-import com.excilys.ebi.gatling.http.check.{ HttpExtractorCheckBuilder, HttpCheck }
+import com.excilys.ebi.gatling.core.check.ExtractorFactory
+import com.excilys.ebi.gatling.core.check.extractor.Extractor
+import com.excilys.ebi.gatling.core.config.GatlingConfiguration.configuration
+import com.excilys.ebi.gatling.core.session.Expression
+import com.excilys.ebi.gatling.http.Headers
+import com.excilys.ebi.gatling.http.check.HttpMultipleCheckBuilder
 import com.excilys.ebi.gatling.http.request.HttpPhase.HeadersReceived
-import com.ning.http.client.Response
+import com.excilys.ebi.gatling.http.response.ExtendedResponse
 
 /**
  * HttpHeaderCheckBuilder class companion
  *
  * It contains DSL definitions
  */
-object HttpHeaderCheckBuilder {
+object HttpHeaderCheckBuilder extends Extractor {
+
+	private def findExtractorFactory(occurrence: Int): ExtractorFactory[ExtendedResponse, String, String] = (response: ExtendedResponse) => (headerName: String) => {
+
+		Option(response.getHeaders(headerName)) match {
+			case Some(headers) if (headers.size > occurrence) =>
+				val headerValue = headers.get(occurrence)
+				if (headerName == Headers.Names.LOCATION)
+					URLDecoder.decode(headerValue, configuration.simulation.encoding)
+				else
+					headerValue
+			case _ => None
+		}
+	}
+
+	private val findAllExtractorFactory: ExtractorFactory[ExtendedResponse, String, Seq[String]] = (response: ExtendedResponse) => (headerName: String) => {
+
+		Option(response.getHeaders(headerName)).map { headerValues =>
+			if (headerName == Headers.Names.LOCATION)
+				headerValues.map(URLDecoder.decode(_, configuration.simulation.encoding))
+			else
+				headerValues.toSeq
+		}
+	}
+
+	private val countExtractorFactory: ExtractorFactory[ExtendedResponse, String, Int] = (response: ExtendedResponse) => (headerName: String) => response.getHeaders(headerName).size
 
 	/**
 	 * Will check the value of the header in the session
 	 *
 	 * @param headerName the function returning the name of the header
 	 */
-	def header(headerName: EvaluatableString) = new HttpHeaderCheckBuilder(headerName)
-
-	private def findExtractorFactory(occurrence: Int): ExtractorFactory[Response, String, String] = (response: Response) => (headerName: String) => {
-		val headers = response.getHeaders(headerName)
-		if (headers.size > occurrence)
-			headers.get(occurrence)
-		else
-			None
-	}
-
-	private val findAllExtractorFactory: ExtractorFactory[Response, String, Seq[String]] = (response: Response) => (headerName: String) => seqToOption(response.getHeaders(headerName))
-
-	private val countExtractorFactory: ExtractorFactory[Response, String, Int] = (response: Response) => (headerName: String) => toOption(response.getHeaders(headerName).size)
+	def header(headerName: Expression[String]) = new HttpMultipleCheckBuilder(findExtractorFactory, findAllExtractorFactory, countExtractorFactory, headerName, HeadersReceived)
 }
-
-/**
- * This class builds a response header check
- *
- * @param expression the function returning the header name to be checked
- */
-class HttpHeaderCheckBuilder(headerName: EvaluatableString) extends HttpExtractorCheckBuilder[String, String](headerName, HeadersReceived) with MultipleExtractorCheckBuilder[HttpCheck[String], Response, String, String] {
-
-	def find: MatcherCheckBuilder[HttpCheck[String], Response, String, String] = find(0)
-
-	def find(occurrence: Int) = new MatcherCheckBuilder(httpCheckBuilderFactory, findExtractorFactory(occurrence))
-
-	def findAll = new MatcherCheckBuilder(httpCheckBuilderFactory, findAllExtractorFactory)
-
-	def count = new MatcherCheckBuilder(httpCheckBuilderFactory, countExtractorFactory)
-}
-

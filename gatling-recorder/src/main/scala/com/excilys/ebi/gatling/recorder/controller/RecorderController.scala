@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * 		http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,103 +18,150 @@ package com.excilys.ebi.gatling.recorder.controller
 import java.net.URI
 import java.util.Date
 
+import scala.annotation.tailrec
 import scala.math.round
-import scala.tools.nsc.io.Path.string2path
-import scala.tools.nsc.io.Directory
+import scala.tools.nsc.io.{ Directory, File }
 
 import org.codehaus.plexus.util.SelectorUtils
+import org.jboss.netty.handler.codec.http.{ HttpMethod, HttpRequest, HttpResponse }
 import org.jboss.netty.handler.codec.http.HttpHeaders.Names.PROXY_AUTHORIZATION
-import org.jboss.netty.handler.codec.http.{ HttpResponse, HttpRequest, HttpMethod }
 
+import com.excilys.ebi.gatling.http.ahc.GatlingAsyncHandlerActor.REDIRECT_STATUS_CODES
+import com.excilys.ebi.gatling.recorder.config.{ Pattern, RecorderOptions }
+import com.excilys.ebi.gatling.recorder.config.Configuration
 import com.excilys.ebi.gatling.recorder.config.Configuration.configuration
-import com.excilys.ebi.gatling.recorder.config.{ Options, Configuration }
 import com.excilys.ebi.gatling.recorder.http.GatlingHttpProxy
-import com.excilys.ebi.gatling.recorder.scenario.{ ScenarioExporter, ScenarioElement, RequestElement, PauseUnit, PauseElement }
-import com.excilys.ebi.gatling.recorder.ui.enumeration.{ PatternType, FilterStrategy }
-import com.excilys.ebi.gatling.recorder.ui.frame.{ RunningFrame, ConfigurationFrame }
-import com.excilys.ebi.gatling.recorder.ui.info.{ SSLInfo, RequestInfo, PauseInfo }
+import com.excilys.ebi.gatling.recorder.scenario.{ PauseElement, PauseUnit, RequestElement, ScenarioElement, ScenarioExporter, TagElement }
+import com.excilys.ebi.gatling.recorder.ui.enumeration.{ FilterStrategy, PatternType }
+import com.excilys.ebi.gatling.recorder.ui.frame.{ ConfigurationFrame, RunningFrame }
+import com.excilys.ebi.gatling.recorder.ui.info.{ PauseInfo, RequestInfo, SSLInfo }
 import com.excilys.ebi.gatling.recorder.ui.util.UIHelper.useUIThread
 import com.ning.http.util.Base64
 
 import grizzled.slf4j.Logging
+import javax.swing.JOptionPane
 
-object RecorderController extends Logging {
-	private val runningFrame: RunningFrame = new RunningFrame
-	private val configurationFrame: ConfigurationFrame = new ConfigurationFrame
+object RecorderController {
+
+	def apply(options: RecorderOptions) = {
+		Configuration(options)
+		val controller = new RecorderController
+		controller.showConfigurationFrame
+	}
+}
+
+class RecorderController extends Logging {
+	private lazy val runningFrame: RunningFrame = new RunningFrame(this)
+	private lazy val configurationFrame: ConfigurationFrame = new ConfigurationFrame(this)
 	private val supportedHttpMethods = Vector(HttpMethod.POST, HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE, HttpMethod.HEAD)
 
 	@volatile private var startDate: Date = _
 	@volatile private var lastRequestDate: Date = _
-
-	@volatile private var scenarioElements = List[ScenarioElement]()
-
-	def apply(options: Options) {
-		Configuration(options)
-		configurationFrame.populateItemsFromConfiguration(configuration)
-		showConfigurationFrame
-	}
+	@volatile private var lastRequest: HttpRequest = _
+	@volatile private var lastStatus: Int = _
+	@volatile private var proxy: GatlingHttpProxy = _
+	@volatile private var scenarioElements: List[ScenarioElement] = Nil
 
 	def startRecording {
-		GatlingHttpProxy(configuration.port, configuration.sslPort, configuration.proxy)
+		val response = if (File(ScenarioExporter.getOutputFolder / ScenarioExporter.getSimulationFileName(startDate)).exists)
+			JOptionPane.showConfirmDialog(null, "You are about to overwrite an existing scenario.", "Warning", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE)
+		else JOptionPane.OK_OPTION
 
-		startDate = new Date
-
-		showRunningFrame
+		if (response == JOptionPane.OK_OPTION) {
+			proxy = new GatlingHttpProxy(this, configuration.port, configuration.sslPort, configuration.proxy)
+			startDate = new Date
+			showRunningFrame
+		}
 	}
 
 	def stopRecording {
-		GatlingHttpProxy.shutdown
+		try {
+			if (scenarioElements.isEmpty)
+				info("Nothing was recorded, skipping scenario generation")
+			else
+				ScenarioExporter.saveScenario(startDate, scenarioElements.reverse)
 
-		// Save Scenario to Disk only if there are recorded elements
-		if (!scenarioElements.isEmpty)
-			ScenarioExporter.saveScenario(startDate, scenarioElements.reverse)
+			proxy.shutdown
 
-		clearRecorderState
-
-		showConfigurationFrame
+		} finally {
+			clearRecorderState
+			showConfigurationFrame
+		}
 	}
 
 	def receiveRequest(request: HttpRequest) {
 		synchronized {
 			// If Outgoing Proxy set, we record the credentials to use them when sending the request
-			Option(request.getHeader(PROXY_AUTHORIZATION)).map { header =>
-				// Split on " " and take 2nd group (Basic credentialsInBase64==)
-				val credentials = new String(Base64.decode(header.split(" ")(1))).split(":")
-				configuration.proxy.username = Some(credentials(0))
-				configuration.proxy.password = Some(credentials(1))
+			Option(request.getHeader(PROXY_AUTHORIZATION)).map {
+				header =>
+					// Split on " " and take 2nd group (Basic credentialsInBase64==)
+					val credentials = new String(Base64.decode(header.split(" ")(1))).split(":")
+					configuration.proxy.username = Some(credentials(0))
+					configuration.proxy.password = Some(credentials(1))
 			}
 		}
 	}
 
 	def receiveResponse(request: HttpRequest, response: HttpResponse) {
-		synchronized {
-			if (isRequestToBeAdded(request)) {
-				processRequest(request, response)
 
-				// Pause calculation
-				if (lastRequestDate != null) {
-					val newRequestDate = new Date
-					val diff = newRequestDate.getTime - lastRequestDate.getTime
-					if (diff > 10) {
+		def processPause {
+			// Pause calculation
+			if (lastRequestDate != null) {
+				val newRequestDate = new Date
+				val diff = newRequestDate.getTime - lastRequestDate.getTime
+				if (diff > 10) {
+					val (pauseValue, pauseUnit) =
+						if (diff > 1000)
+							(round(diff / 1000).toLong, PauseUnit.SECONDS)
+						else
+							(diff, PauseUnit.MILLISECONDS)
 
-						val (pauseValue, pauseUnit) =
-							if (diff > 1000)
-								(round(diff / 1000).toLong, PauseUnit.SECONDS)
-							else
-								(diff, PauseUnit.MILLISECONDS)
-
-						lastRequestDate = newRequestDate
-						useUIThread {
-							runningFrame.receiveEventInfo(new PauseInfo(pauseValue, pauseUnit))
-						}
-
-						scenarioElements = new PauseElement(pauseValue, pauseUnit) :: scenarioElements
+					lastRequestDate = newRequestDate
+					useUIThread {
+						runningFrame.receiveEventInfo(new PauseInfo(pauseValue, pauseUnit))
 					}
-				} else {
-					lastRequestDate = new Date
+
+					scenarioElements = new PauseElement(pauseValue, pauseUnit) :: scenarioElements
 				}
+			} else
+				lastRequestDate = new Date
+		}
+
+		def processRequest(request: HttpRequest, statusCode: Int) {
+
+			// Store request in scenario elements
+			scenarioElements = new RequestElement(request, statusCode, None) :: scenarioElements
+
+			// Send request information to view
+			useUIThread {
+				runningFrame.receiveEventInfo(new RequestInfo(request, response))
 			}
 		}
+
+		synchronized {
+			if (isRequestAccepted(request)) {
+				if (isRequestRedirectChainStart(request, response)) {
+					processPause
+					lastRequest = request
+
+				} else if (isRequestRedirectChainEnd(request, response)) {
+					// process request with new status
+					processRequest(lastRequest, response.getStatus.getCode)
+					lastRequest = null
+
+				} else if (!isRequestInsideRedirectChain(request, response)) {
+					// standard use case
+					processPause
+					processRequest(request, response.getStatus.getCode)
+				}
+			}
+
+			lastStatus = response.getStatus.getCode
+		}
+	}
+
+	def addTag(text: String) {
+		scenarioElements = new TagElement(text) :: scenarioElements
 	}
 
 	def secureConnection(securedHostURI: URI) {
@@ -141,42 +188,50 @@ object RecorderController extends Logging {
 		lastRequestDate = null
 	}
 
-	private def isRequestToBeAdded(request: HttpRequest): Boolean = {
-		val uri = new URI(request.getUri)
-		if (supportedHttpMethods.contains(request.getMethod)) {
-			if (configuration.filterStrategy != FilterStrategy.NONE) {
+	private def isRedirectCode(code: Int) = REDIRECT_STATUS_CODES.contains(code)
 
-				val uriMatched = (for (configPattern <- configuration.patterns) yield {
-					val pattern = configPattern.patternType match {
-						case PatternType.ANT => SelectorUtils.ANT_HANDLER_PREFIX
-						case PatternType.JAVA => SelectorUtils.REGEX_HANDLER_PREFIX
-					}
+	private def isRequestRedirectChainStart(request: HttpRequest, response: HttpResponse): Boolean = configuration.followRedirect && !isRedirectCode(lastStatus) && isRedirectCode(response.getStatus.getCode)
 
-					SelectorUtils.matchPath(pattern + configPattern.pattern + SelectorUtils.PATTERN_HANDLER_SUFFIX, uri.getPath)
-				}).foldLeft(false)(_ || _)
+	private def isRequestInsideRedirectChain(request: HttpRequest, response: HttpResponse): Boolean = configuration.followRedirect && isRedirectCode(lastStatus) && isRedirectCode(response.getStatus.getCode)
 
-				if (configuration.filterStrategy == FilterStrategy.ONLY)
-					uriMatched
-				else
-					!uriMatched
-			} else
-				true
-		} else
-			false
+	private def isRequestRedirectChainEnd(request: HttpRequest, response: HttpResponse): Boolean = configuration.followRedirect && isRedirectCode(lastStatus) && !isRedirectCode(response.getStatus.getCode)
+
+	private def isRequestAccepted(request: HttpRequest): Boolean = {
+
+		def requestMatched = {
+			val path = new URI(request.getUri).getPath
+
+			def gatlingPatternToPlexusPattern(pattern: Pattern) = {
+
+				val prefix = pattern.patternType match {
+					case PatternType.ANT => SelectorUtils.ANT_HANDLER_PREFIX
+					case PatternType.JAVA => SelectorUtils.REGEX_HANDLER_PREFIX
+				}
+
+				prefix + pattern.getPattern + SelectorUtils.PATTERN_HANDLER_SUFFIX
+			}
+
+			@tailrec
+			def matchPath(patterns: List[Pattern]): Boolean = patterns match {
+				case Nil => false
+				case head :: tail =>
+					if (SelectorUtils.matchPath(gatlingPatternToPlexusPattern(head), path)) true
+					else matchPath(tail)
+			}
+
+			matchPath(configuration.patterns)
+		}
+
+		def requestPassFilters = configuration.filterStrategy match {
+			case FilterStrategy.EXCEPT => !requestMatched
+			case FilterStrategy.ONLY => requestMatched
+			case FilterStrategy.NONE => true
+		}
+
+		supportedHttpMethods.contains(request.getMethod) && requestPassFilters
 	}
 
 	private def getFolder(folderName: String, folderPath: String): Directory = Directory(folderPath).createDirectory()
 
 	private def getOutputFolder = getFolder("output", configuration.outputFolder)
-
-	private def processRequest(request: HttpRequest, response: HttpResponse) {
-
-		// Store request in scenario elements
-		scenarioElements = new RequestElement(request, response.getStatus.getCode, None) :: scenarioElements
-
-		// Send request information to view
-		useUIThread {
-			runningFrame.receiveEventInfo(new RequestInfo(request, response))
-		}
-	}
 }

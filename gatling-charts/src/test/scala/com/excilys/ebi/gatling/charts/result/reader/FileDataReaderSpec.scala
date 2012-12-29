@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * 		http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,29 +15,42 @@
  */
 package com.excilys.ebi.gatling.charts.result.reader
 
-import scala.tools.nsc.io.Path
 import org.junit.runner.RunWith
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
-import com.excilys.ebi.gatling.core.config.GatlingConfiguration
-import com.excilys.ebi.gatling.core.result.message.{ RunRecord, RequestStatus }
-import com.excilys.ebi.gatling.core.result.reader.ChartRequestRecord
+
+import com.excilys.ebi.gatling.core.ConfigurationConstants
+import com.excilys.ebi.gatling.core.config.{ GatlingConfiguration, GatlingPropertiesBuilder }
+import com.excilys.ebi.gatling.core.result.RequestPath
+import com.excilys.ebi.gatling.core.result.message.RunRecord
 import com.excilys.ebi.gatling.core.util.DateHelper.parseTimestampString
-import com.excilys.ebi.gatling.core.util.StringHelper.EMPTY
+
+import java.util
 
 @RunWith(classOf[JUnitRunner])
 class FileDataReaderSpec extends Specification {
 
-	//The file data reader needs to know the encoding, use default conf.
-	GatlingConfiguration.setUp(None, None, None, Some(Path(List("src", "test", "resources")).toString), None)
+	// Tests must be executed sequentially to avoid configuration conflicts
+	override def is = sequential ^ super.is
 
-	var singleFileDataReader: FileDataReader = null
-	var multipleFilesDataReader: FileDataReader = null
+	val LOWER_BOUNDS = "gatling.charting.indicators.lowerBound"
+	val HIGHER_BOUNDS = "gatling.charting.indicators.higherBound"
+	val PERCENTILE_1 = "gatling.charting.indicators.percentile1"
+	val PERCENTILE_2 = "gatling.charting.indicators.percentile2"
+
+	val init = {
+		val props = new GatlingPropertiesBuilder
+		props.sourcesDirectory("src/test/resources")
+		props.resultsDirectory("src/test/resources")
+
+		GatlingConfiguration.setUp(props.build)
+	}
 
 	"When reading a single log file, FileDataReader" should {
 
+		val singleFileDataReader = new FileDataReader("run_single_node")
+
 		"be able to read a single file simulation" in {
-			singleFileDataReader = new FileDataReader("run_single_node")
 			singleFileDataReader must not be null
 		}
 
@@ -45,26 +58,23 @@ class FileDataReaderSpec extends Specification {
 			singleFileDataReader.scenarioNames must beEqualTo(List("Scenario name", "Other Scenario Name"))
 		}
 
-		"find the two correct scenarios" in {
+		"find the fifteen correct requests" in {
 			val requestNames = List("Request request_1", "Request request_2", "Request request_3", "Request request_4", "Request request_5", "Request request_6", "Request request_7", "Request request_8", "Request request_9", "Request request_10")
 			val otherRequestNames = List("Request other_request_1", "Request other_request_2", "Request other_request_3", "Request other_request_9", "Request other_request_10")
-			singleFileDataReader.requestNames must haveTheSameElementsAs(requestNames ++ otherRequestNames)
+			singleFileDataReader.groupsAndRequests.collect { case (group, Some(request)) => RequestPath.path(request, group) } must haveTheSameElementsAs(requestNames ++ otherRequestNames)
 		}
 
 		"have a correct run record" in {
 			singleFileDataReader.runRecord must beEqualTo(RunRecord(parseTimestampString("20120607202804"), "run1", "interesting test run"))
 		}
 
-		"have read all the request records" in {
-			singleFileDataReader.requestRecords must have size 353
-		}
-
 	}
 
 	"When reading two log files coming from a multinode simulation, FileDataReader" should {
 
+		val multipleFilesDataReader = new FileDataReader("run_multiple_nodes")
+
 		"be able to read a multiple files simulation" in {
-			multipleFilesDataReader = new FileDataReader("run_multiple_nodes")
 			multipleFilesDataReader must not be null
 		}
 
@@ -72,35 +82,99 @@ class FileDataReaderSpec extends Specification {
 			multipleFilesDataReader.scenarioNames must beEqualTo(List("Scenario name", "Other Scenario Name"))
 		}
 
-		"find the two correct scenarios" in {
+		"find the fifteen correct requests" in {
 			val requestNames = List("Request request_1", "Request request_2", "Request request_3", "Request request_4", "Request request_5", "Request request_6", "Request request_7", "Request request_8", "Request request_9", "Request request_10")
 			val otherRequestNames = List("Request other_request_1", "Request other_request_2", "Request other_request_3", "Request other_request_9", "Request other_request_10")
-			multipleFilesDataReader.requestNames must haveTheSameElementsAs(requestNames ++ otherRequestNames)
-		}
-
-		"have read all the request records" in {
-			multipleFilesDataReader.requestRecords must have size 706
-		}
-
-		"have a record from the first node simulation log" in {
-			val record = ChartRequestRecord("Scenario name", 2, "Request request_2", 1339408458535L, 1339408458772L, 1339408458537L, 1339408458772L, RequestStatus.withName("OK"))
-			multipleFilesDataReader.requestRecords must contain(record)
-		}
-
-		"have a record from the second node simulation log" in {
-			val record = ChartRequestRecord("Scenario name", 1, "Request request_1", 1339407593167L, 1339407593907L, 1339407593692L, 1339407593904L, RequestStatus.withName("OK"))
-			multipleFilesDataReader.requestRecords must contain(record)
-		}
-
-		"have correct run records" in {
-			val node1RunRecord = RunRecord(parseTimestampString("20120611115415"), "run", "node1")
-			val node2RunRecord = RunRecord(parseTimestampString("20120611113951"), "run", "node2")
-			multipleFilesDataReader.allRunRecords must haveTheSameElementsAs(List(node1RunRecord, node2RunRecord))
+			multipleFilesDataReader.groupsAndRequests.collect { case (group, Some(request)) => RequestPath.path(request, group) } must haveTheSameElementsAs(requestNames ++ otherRequestNames)
 		}
 
 		//TODO - how to define correctly the runRecord method
 		"have correct run records" in {
 			multipleFilesDataReader.runRecord must not be null
+		}
+	}
+
+	"When reading a single log file with known statistics, FileDataReder" should {
+		val singleFileDataReader = new FileDataReader("run_single_node_with_known_stats")
+
+		"return expected minResponseTime for correct request data" in {
+			singleFileDataReader.generalStats().min must beEqualTo(2000L)
+		}
+
+		"return expected maxResponseTime for correct request data" in {
+			singleFileDataReader.generalStats().max must beEqualTo(9000L)
+		}
+
+		"return expected responseTimeStandardDeviation for correct request data" in {
+			singleFileDataReader.generalStats().stdDev must beEqualTo(2000L)
+		}
+
+		"return expected responseTimePercentile for the (0, 0.7) percentiles" in {
+			val props = new util.HashMap[String, Any]()
+			props.put(PERCENTILE_1, 0)
+			props.put(PERCENTILE_2, 70)
+			props.put(ConfigurationConstants.CONF_DIRECTORY_SIMULATIONS, "src/test/resources")
+			props.put(ConfigurationConstants.CONF_DIRECTORY_RESULTS, "src/test/resources")
+			GatlingConfiguration.setUp(props)
+			val lowPercentilesFileDataReader = new FileDataReader("run_single_node_with_known_stats")
+			lowPercentilesFileDataReader.generalStats().percentile1 must beEqualTo(2000L)
+			lowPercentilesFileDataReader.generalStats().percentile2 must beEqualTo(5000L)
+		}
+
+		"return expected result for the (99.99, 100) percentiles" in {
+			val props = new util.HashMap[String, Any]()
+			props.put(PERCENTILE_1, 99)
+			props.put(PERCENTILE_2, 100)
+			props.put(ConfigurationConstants.CONF_DIRECTORY_SIMULATIONS, "src/test/resources")
+			props.put(ConfigurationConstants.CONF_DIRECTORY_RESULTS, "src/test/resources")
+			GatlingConfiguration.setUp(props)
+			val highPercentilesFileDataReader = new FileDataReader("run_single_node_with_known_stats")
+			highPercentilesFileDataReader.generalStats().percentile1 must beEqualTo(9000L)
+			highPercentilesFileDataReader.generalStats().percentile2 must beEqualTo(9000L)
+		}
+
+		"indicate that all the request have their response time in between 0 and 100000" in {
+			val props = new util.HashMap[String, Any]()
+			props.put(LOWER_BOUNDS, 0)
+			props.put(HIGHER_BOUNDS, 100000)
+			props.put(ConfigurationConstants.CONF_DIRECTORY_SIMULATIONS, "src/test/resources")
+			props.put(ConfigurationConstants.CONF_DIRECTORY_RESULTS, "src/test/resources")
+			GatlingConfiguration.setUp(props)
+			val fileDataReader = new FileDataReader("run_single_node_with_known_stats")
+			fileDataReader.numberOfRequestInResponseTimeRange().map(_._2) must beEqualTo(List(0L, 8L, 0L, 0L))
+		}
+
+		"indicate that 1 request had a response time below 2500ms" in {
+			val props = new util.HashMap[String, Any]()
+			props.put(LOWER_BOUNDS, 2500)
+			props.put(HIGHER_BOUNDS, 5000)
+			props.put(ConfigurationConstants.CONF_DIRECTORY_SIMULATIONS, "src/test/resources")
+			props.put(ConfigurationConstants.CONF_DIRECTORY_RESULTS, "src/test/resources")
+			GatlingConfiguration.setUp(props)
+			val nRequestInResponseTimeRange = new FileDataReader("run_single_node_with_known_stats").numberOfRequestInResponseTimeRange().map(_._2)
+			nRequestInResponseTimeRange(0) must beEqualTo(1L)
+		}
+
+		"indicate that 5 request had a response time in between 2500ms and 5000ms" in {
+			val props = new util.HashMap[String, Any]()
+			props.put(LOWER_BOUNDS, 2500)
+			props.put(HIGHER_BOUNDS, 5000)
+			props.put(ConfigurationConstants.CONF_DIRECTORY_SIMULATIONS, "src/test/resources")
+			props.put(ConfigurationConstants.CONF_DIRECTORY_RESULTS, "src/test/resources")
+			GatlingConfiguration.setUp(props)
+			val nRequestInResponseTimeRange = new FileDataReader("run_single_node_with_known_stats").numberOfRequestInResponseTimeRange().map(_._2)
+			nRequestInResponseTimeRange(1) must beEqualTo(5L)
+		}
+
+		"indicate that 2 request had a response time above 5000ms" in {
+			val props = new util.HashMap[String, Any]()
+			props.put(LOWER_BOUNDS, 2500)
+			props.put(HIGHER_BOUNDS, 5000)
+			props.put(ConfigurationConstants.CONF_DIRECTORY_SIMULATIONS, "src/test/resources")
+			props.put(ConfigurationConstants.CONF_DIRECTORY_RESULTS, "src/test/resources")
+			GatlingConfiguration.setUp(props)
+			val nRequestInResponseTimeRange = new FileDataReader("run_single_node_with_known_stats").numberOfRequestInResponseTimeRange().map(_._2)
+			nRequestInResponseTimeRange(2) must beEqualTo(2L)
 		}
 	}
 }

@@ -16,12 +16,15 @@
 package com.excilys.ebi.gatling.recorder.scenario
 
 import java.net.URI
+import java.nio.charset.Charset
 
-import scala.collection.JavaConversions.{ mapAsScalaMap, asScalaBuffer }
+import scala.collection.JavaConversions.{ asScalaBuffer, mapAsScalaMap }
 
-import org.jboss.netty.handler.codec.http.HttpHeaders.Names.{ CONTENT_TYPE, AUTHORIZATION }
-import org.jboss.netty.handler.codec.http.{ QueryStringDecoder, HttpRequest }
+import org.jboss.netty.handler.codec.http.{ HttpRequest, QueryStringDecoder }
+import org.jboss.netty.handler.codec.http.HttpHeaders.Names.{ AUTHORIZATION, CONTENT_TYPE }
 
+import com.excilys.ebi.gatling.http.util.HttpHelper.parseFormBody
+import com.excilys.ebi.gatling.recorder.config.Configuration.configuration
 import com.ning.http.util.Base64
 
 import grizzled.slf4j.Logging
@@ -41,8 +44,6 @@ class RequestElement(val request: HttpRequest, val statusCode: Int, val simulati
 
 	private val containsFormParams: Boolean = Option(request.getHeader(CONTENT_TYPE)).map(_.contains("application/x-www-form-urlencoded")).getOrElse(false)
 
-	val requestBody = if (request.getContent.capacity > 0 && !containsFormParams) Some(new String(request.getContent.array)) else None
-
 	private val uri = URI.create(request.getUri)
 	val baseUrl = uri.getScheme() + "://" + uri.getAuthority
 	private var printedUrl = baseUrl + uri.getPath
@@ -51,14 +52,25 @@ class RequestElement(val request: HttpRequest, val statusCode: Int, val simulati
 
 	val headers: List[(String, String)] = request.getHeaders.map { entry => (entry.getKey, entry.getValue) }.toList
 
-	val queryParams = convertParamsFromJavaToScala(new QueryStringDecoder(request.getUri).getParameters)
+	val queryParams = convertParamsFromJavaToScala(new QueryStringDecoder(request.getUri, Charset.forName(configuration.encoding)).getParameters)
 
-	val params: List[(String, String)] =
-		if (request.getContent.capacity > 0 && containsFormParams) {
-			val paramDecoder = new QueryStringDecoder("http://localhost/?" + new String(request.getContent.array))
-			convertParamsFromJavaToScala(paramDecoder.getParameters)
-		} else
-			Nil
+	val requestBodyOrParams: Option[Either[String, List[(String, String)]]] = if (request.getContent.readableBytes > 0) {
+
+		val bufferBytes = new Array[Byte](request.getContent.readableBytes)
+
+		request.getContent.getBytes(request.getContent.readerIndex, bufferBytes);
+
+		val bodyString = new String(bufferBytes, configuration.encoding)
+
+		if (containsFormParams) {
+			Some(Right(parseFormBody(bodyString)))
+		} else {
+			(Some(Left(bodyString)))
+		}
+
+	} else {
+		None
+	}
 
 	var id: Int = 0
 
@@ -74,9 +86,7 @@ class RequestElement(val request: HttpRequest, val statusCode: Int, val simulati
 		this
 	}
 
-	private def convertParamsFromJavaToScala(params: java.util.Map[String, java.util.List[String]]): List[(String, String)] = {
-		(for ((key, list) <- params) yield (for (e <- list) yield (key, e))).toList.flatten
-	}
+	private def convertParamsFromJavaToScala(params: java.util.Map[String, java.util.List[String]]): List[(String, String)] = (for ((key, list) <- params) yield (for (e <- list) yield (key, e))).toList.flatten
 
 	private val basicAuthCredentials: Option[(String, String)] = {
 		Option(request.getHeader(AUTHORIZATION)) match {
@@ -96,8 +106,7 @@ class RequestElement(val request: HttpRequest, val statusCode: Int, val simulati
 				"method" -> method,
 				"printedUrl" -> printedUrl,
 				"queryParams" -> queryParams,
-				"params" -> params,
-				"hasBody" -> requestBody.isDefined,
+				"requestBodyOrParams" -> requestBodyOrParams,
 				"statusCode" -> statusCode,
 				"id" -> id,
 				"credentials" -> basicAuthCredentials,

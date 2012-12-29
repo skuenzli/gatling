@@ -16,72 +16,112 @@
 package com.excilys.ebi.gatling.core.result.writer
 
 import java.lang.System.currentTimeMillis
+import java.util.{ HashMap => JHashMap }
 
-import com.excilys.ebi.gatling.core.action.EndAction.END_OF_SCENARIO
-import com.excilys.ebi.gatling.core.action.StartAction.START_OF_SCENARIO
-import com.excilys.ebi.gatling.core.result.message.RequestStatus.{ OK, KO }
-import com.excilys.ebi.gatling.core.result.message.{ RequestRecord, InitializeDataWriter, FlushDataWriter }
+import scala.collection.mutable.{ HashMap, LinkedHashMap }
+
+import com.excilys.ebi.gatling.core.result.{ Group, RequestPath }
+import com.excilys.ebi.gatling.core.result.message.{ GroupRecord, KO, OK }
+import com.excilys.ebi.gatling.core.result.message.{ RequestRecord, RunRecord, ScenarioRecord, ShortScenarioDescription }
+import com.excilys.ebi.gatling.core.result.message.RecordEvent.{ END, START }
 
 import grizzled.slf4j.Logging
 
+class UserCounters(val totalCount: Int) {
+
+	private var _runningCount: Int = 0
+	private var _doneCount: Int = 0
+
+	def runningCount = _runningCount
+	def doneCount = _doneCount
+
+	def userStart { _runningCount += 1 }
+	def userDone { _runningCount -= 1; _doneCount += 1 }
+	def waitingCount = totalCount - _runningCount - _doneCount
+}
+
+class RequestCounters(var successfulCount: Int, var failedCount: Int)
+
 class ConsoleDataWriter extends DataWriter with Logging {
 
-	private var startUpTime: Long = _
-	private var lastDisplayTime: Long = _
-	private var activeUsersCount: Int = _
-	private var totalUsersCount: Int = _
-	private var successfulRequestsCount: Int = _
-	private var failedRequestsCount: Int = _
+	private var startUpTime = 0L
+	private var lastDisplayTime = 0L
+
+	private val usersCounters = new HashMap[String, UserCounters]
+	private val groupStack = new JHashMap[(String, Int), Option[Group]]
+	private val requestsCounters = new LinkedHashMap[String, RequestCounters]
 
 	private val displayPeriod = 5 * 1000
 
-	def uninitialized: Receive = {
-		case InitializeDataWriter(_, totalUsersCount, _, _) =>
-			startUpTime = currentTimeMillis
-			activeUsersCount = 0
-			successfulRequestsCount = 0
-			failedRequestsCount = 0
-			lastDisplayTime = currentTimeMillis
-			this.totalUsersCount = totalUsersCount
-			context.become(initialized)
+	private var complete = false
 
-		case unknown: AnyRef => error("Unsupported message type in uninilialized state" + unknown.getClass)
-		case unknown: Any => error("Unsupported message type in uninilialized state " + unknown)
+	def display(force: Boolean) {
+		val now = currentTimeMillis
+		if (force || (now - lastDisplayTime > displayPeriod)) {
+			lastDisplayTime = now
+			val timeSinceStartUpInSec = (now - startUpTime) / 1000
+
+			val summary = ConsoleSummary(timeSinceStartUpInSec, usersCounters, requestsCounters)
+			complete = summary.complete
+			println(summary)
+		}
 	}
 
-	def initialized: Receive = {
-		case RequestRecord(scenarioName, userId, actionName, executionStartDate, executionEndDate, requestSendingEndDate, responseReceivingStartDate, resultStatus, resultMessage, extraInfo) =>
+	override def onInitializeDataWriter(runRecord: RunRecord, scenarios: Seq[ShortScenarioDescription]) {
 
-			actionName match {
-				case START_OF_SCENARIO => activeUsersCount += 1
-				case END_OF_SCENARIO => activeUsersCount -= 1
-				case _ => resultStatus match {
-					case OK => successfulRequestsCount += 1
-					case KO => failedRequestsCount += 1
-				}
-			}
+		startUpTime = currentTimeMillis
+		lastDisplayTime = currentTimeMillis
 
-			val now = currentTimeMillis
-			if (now - lastDisplayTime > displayPeriod) {
-				lastDisplayTime = now
-				val timeSinceStartUpInSec = (now - startUpTime) / 1000
-				println(new StringBuilder()
-					.append(timeSinceStartUpInSec)
-					.append(" sec | Users: active=")
-					.append(activeUsersCount)
-					.append("/")
-					.append(totalUsersCount)
-					.append(" | Requests: OK=")
-					.append(successfulRequestsCount)
-					.append(" KO=")
-					.append(failedRequestsCount))
-			}
-
-		case FlushDataWriter => context.unbecome() // return to uninitialized state
-
-		case unknown: AnyRef => error("Unsupported message type in inilialized state " + unknown.getClass)
-		case unknown: Any => error("Unsupported message type in inilialized state " + unknown)
+		usersCounters.clear
+		scenarios.foreach(scenario => usersCounters.put(scenario.name, new UserCounters(scenario.nbUsers)))
+		requestsCounters.clear
 	}
 
-	def receive = uninitialized
+	override def onScenarioRecord(scenarioRecord: ScenarioRecord) {
+		scenarioRecord.event match {
+			case START =>
+				usersCounters
+					.get(scenarioRecord.scenarioName)
+					.map(_.userStart)
+					.getOrElse(error("Internal error, scenario '%s' has not been correctly initialized" format scenarioRecord.scenarioName))
+				updateCurrentGroup(scenarioRecord.scenarioName, scenarioRecord.userId, _ => None)
+
+			case END =>
+				usersCounters
+					.get(scenarioRecord.scenarioName)
+					.map(_.userDone)
+					.getOrElse(error("Internal error, scenario '%s' has not been correctly initialized" format scenarioRecord.scenarioName))
+				groupStack.remove((scenarioRecord.scenarioName, scenarioRecord.userId))
+		}
+	}
+
+	override def onGroupRecord(groupRecord: GroupRecord) {
+		groupRecord.event match {
+			case START =>
+				updateCurrentGroup(groupRecord.scenarioName, groupRecord.userId, current => Some(Group(groupRecord.groupName, current)))
+
+			case END =>
+				updateCurrentGroup(groupRecord.scenarioName, groupRecord.userId, current => current.flatMap(_.parent))
+		}
+	}
+
+	override def onRequestRecord(requestRecord: RequestRecord) {
+
+		val requestCounters = requestsCounters.getOrElseUpdate(RequestPath.path(requestRecord.requestName, groupStack.get((requestRecord.scenarioName, requestRecord.userId))), new RequestCounters(0, 0))
+
+		requestRecord.requestStatus match {
+			case OK => requestCounters.successfulCount += 1
+			case KO => requestCounters.failedCount += 1
+		}
+
+		display(false)
+	}
+
+	override def onFlushDataWriter {
+		if (!complete)
+			display(true)
+	}
+
+	private def updateCurrentGroup(scenarioName: String, userId: Int, value: Option[Group] => Option[Group]) =
+		groupStack.put((scenarioName, userId), value(groupStack.get((scenarioName, userId))))
 }

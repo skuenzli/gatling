@@ -23,12 +23,12 @@ import org.jaxen.dom.DOMXPath
 import org.w3c.dom.{ Node, Document }
 import org.xml.sax.{ InputSource, EntityResolver }
 
-import com.excilys.ebi.gatling.core.check.extractor.Extractor.{ toOption, seqToOption }
-import com.excilys.ebi.gatling.core.util.StringHelper.EMPTY
+import com.excilys.ebi.gatling.core.check.extractor.Extractor
 
 import javax.xml.parsers.{ DocumentBuilderFactory, DocumentBuilder }
 
 object XPathExtractor {
+
 	System.setProperty("javax.xml.parsers.SAXParserFactory", "org.apache.xerces.jaxp.SAXParserFactoryImpl")
 	System.setProperty("javax.xml.parsers.DOMParserFactory", "org.apache.xerces.jaxp.DOMParserFactoryImpl")
 	private val factory = DocumentBuilderFactory.newInstance
@@ -36,7 +36,7 @@ object XPathExtractor {
 	factory.setNamespaceAware(true)
 
 	val noopEntityResolver = new EntityResolver {
-		def resolveEntity(publicId: String, systemId: String) = new InputSource(new StringReader(EMPTY))
+		def resolveEntity(publicId: String, systemId: String) = new InputSource(new StringReader(""))
 	}
 
 	val parserHolder = new ThreadLocal[DocumentBuilder] {
@@ -65,7 +65,7 @@ object XPathExtractor {
  * @constructor creates a new XPathExtractor
  * @param inputStream the XML document in which the XPath search will be applied
  */
-class XPathExtractor(document: Document) {
+class XPathExtractor(document: Document) extends Extractor {
 
 	def xpath(expression: String, namespaces: List[(String, String)]) = {
 		val xpathExpression = new DOMXPath(expression)

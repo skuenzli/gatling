@@ -15,46 +15,28 @@
  */
 package com.excilys.ebi.gatling.core.session.handler
 
-import com.excilys.ebi.gatling.core.session.Session.GATLING_PRIVATE_ATTRIBUTE_PREFIX
 import com.excilys.ebi.gatling.core.session.Session
 
-/**
- * CounterBasedIterationHandler trait 'companion'
- */
-object CounterBasedIterationHandler {
-
-	/**
-	 * Key prefix for Counters
-	 */
-	val COUNTER_KEY_PREFIX = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "core.counter."
-
-	def getCounterAttributeName(counterName: String) = COUNTER_KEY_PREFIX + counterName
-}
+import grizzled.slf4j.Logging
+import scalaz._
 
 /**
  * This trait is used for mixin-composition
  *
  * It adds counter based iteration behavior to a class
  */
-trait CounterBasedIterationHandler extends IterationHandler {
+trait CounterBasedIterationHandler extends IterationHandler with Logging {
 
-	lazy val counterAttributeName = CounterBasedIterationHandler.getCounterAttributeName(counterName)
+	override def init(session: Session) =
+		if (session.contains(counterName))
+			super.init(session)
+		else
+			super.init(session).set(counterName, -1)
 
-	override def init(session: Session) = {
-
-		session.getAttributeAsOption[Int](counterAttributeName) match {
-			case None => super.init(session).setAttribute(counterAttributeName, -1)
-			case Some(_) => super.init(session)
-		}
+	override def increment(session: Session) = session.safeGetAs[Int](counterName) match {
+		case Success(currentValue) => super.increment(session).set(counterName, currentValue + 1)
+		case Failure(message) => error("Could not retrieve loop counter: " + message); throw new IllegalAccessError("You must call startCounter before this method is called")
 	}
 
-	override def increment(session: Session) = {
-
-		session.getAttributeAsOption[Int](counterAttributeName) match {
-			case Some(currentValue) => super.increment(session).setAttribute(counterAttributeName, currentValue + 1)
-			case None => throw new IllegalAccessError("You must call startCounter before this method is called")
-		}
-	}
-
-	override def expire(session: Session) = super.expire(session).removeAttribute(CounterBasedIterationHandler.getCounterAttributeName(counterName))
+	override def expire(session: Session) = super.expire(session).remove(counterName)
 }

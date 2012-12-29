@@ -15,12 +15,13 @@
  */
 package com.excilys.ebi.gatling.recorder.ui.frame
 
-import java.awt.event.{ KeyListener, KeyEvent }
 import java.awt.Color
+import java.awt.event.{ KeyListener, KeyEvent }
 import java.util.Date
 
 import scala.collection.mutable
 
+import com.excilys.ebi.gatling.core.util.StringHelper.trimToOption
 import com.excilys.ebi.gatling.recorder.ui.util.UIHelper.useUIThread
 
 import grizzled.slf4j.Logging
@@ -47,10 +48,9 @@ object ValidationHelper extends Logging {
 					txtField.setBorder(disabledBorder)
 				updateValidationStatus(id, true, cFrame)
 			} catch {
-				case (e: NumberFormatException) => {
+				case e: NumberFormatException =>
 					txtField.setBorder(errorBorder)
 					updateValidationStatus(id, false, cFrame)
-				}
 			}
 		}
 
@@ -62,10 +62,11 @@ object ValidationHelper extends Logging {
 	def nonEmptyValidator(cFrame: ConfigurationFrame, id: String) = new KeyListener {
 		def keyReleased(e: KeyEvent) {
 			val txtField = e.getComponent.asInstanceOf[JTextField]
-			if (!txtField.getText.trim.isEmpty) {
+
+			trimToOption(txtField.getText).map { _ =>
 				txtField.setBorder(standardBorder)
 				updateValidationStatus(id, true, cFrame)
-			} else {
+			}.getOrElse {
 				txtField.setBorder(errorBorder)
 				updateValidationStatus(id, false, cFrame)
 			}
@@ -79,19 +80,19 @@ object ValidationHelper extends Logging {
 	def proxyHostValidator(cFrame: ConfigurationFrame) = new KeyListener {
 		def keyReleased(e: KeyEvent) {
 			val txtField = e.getComponent.asInstanceOf[JTextField]
-			if (!txtField.getText.trim.isEmpty) {
+
+			trimToOption(txtField.getText).map { _ =>
 				cFrame.txtProxyPort.setEnabled(true)
 				cFrame.txtProxySslPort.setEnabled(true)
 				cFrame.txtProxyUsername.setEnabled(true)
 				cFrame.txtProxyPassword.setEnabled(true)
-			} else {
+			}.getOrElse {
 				cFrame.txtProxyPort.setEnabled(false)
 				cFrame.txtProxyPort.setText("0")
 				cFrame.txtProxyPort.getKeyListeners.foreach {
-					case kl: KeyListener =>
-						useUIThread {
-							kl.keyReleased(new KeyEvent(cFrame.txtProxyPort, 0, new Date().getTime, 0, 0, '0'))
-						}
+					case kl: KeyListener => useUIThread {
+						kl.keyReleased(new KeyEvent(cFrame.txtProxyPort, 0, new Date().getTime, 0, 0, '0'))
+					}
 				}
 				cFrame.txtProxySslPort.setEnabled(false)
 				cFrame.txtProxySslPort.setText("0")

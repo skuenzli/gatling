@@ -17,30 +17,29 @@ package com.excilys.ebi.gatling.http.cookie
 
 import java.net.URI
 
-import com.excilys.ebi.gatling.core.session.Session.GATLING_PRIVATE_ATTRIBUTE_PREFIX
 import com.excilys.ebi.gatling.core.session.Session
+import com.excilys.ebi.gatling.core.session.Session.GATLING_PRIVATE_ATTRIBUTE_PREFIX
 import com.ning.http.client.Cookie
+
+import scalaz._
 
 object CookieHandling {
 
 	val COOKIES_CONTEXT_KEY = GATLING_PRIVATE_ATTRIBUTE_PREFIX + "http.cookies"
 
-	def getStoredCookies(session: Session, url: String): Iterable[Cookie] = {
+	def getStoredCookies(session: Session, url: String): List[Cookie] = {
 
-		session.getAttributeAsOption[CookieStore](COOKIES_CONTEXT_KEY) match {
-			case Some(cookieStore) => {
-				val uri = URI.create(url)
-				cookieStore.get(uri)
-			}
+		session.safeGetAs[CookieStore](COOKIES_CONTEXT_KEY) match {
+			case Success(cookieStore) => cookieStore.get(URI.create(url))
 			case _ => Nil
 		}
 	}
 
-	def storeCookies(session: Session, uri: URI, cookies: Iterable[Cookie]): Session = {
+	def storeCookies(session: Session, uri: URI, cookies: List[Cookie]): Session = {
 		if (!cookies.isEmpty) {
-			session.getAttributeAsOption[CookieStore](COOKIES_CONTEXT_KEY) match {
-				case Some(cookieStore) => session.setAttribute(COOKIES_CONTEXT_KEY, cookieStore.add(uri, cookies))
-				case _ => session.setAttribute(COOKIES_CONTEXT_KEY, new CookieStore(Map(uri -> cookies.toList)))
+			session.safeGetAs[CookieStore](COOKIES_CONTEXT_KEY) match {
+				case Success(cookieStore) => session.set(COOKIES_CONTEXT_KEY, cookieStore.add(uri, cookies))
+				case _ => session.set(COOKIES_CONTEXT_KEY, CookieStore(uri, cookies))
 			}
 		} else
 			session

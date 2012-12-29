@@ -16,30 +16,17 @@
 package com.excilys.ebi.gatling.http.check.status
 
 import com.excilys.ebi.gatling.core.check.ExtractorFactory
-import com.excilys.ebi.gatling.core.check.MatcherCheckBuilder
-import com.excilys.ebi.gatling.core.util.StringHelper.EMPTY
-import com.excilys.ebi.gatling.http.check.{ HttpExtractorCheckBuilder, HttpCheck }
+import com.excilys.ebi.gatling.core.session.NOOP_EXPRESSION
+import com.excilys.ebi.gatling.http.check.HttpSingleCheckBuilder
 import com.excilys.ebi.gatling.http.request.HttpPhase.StatusReceived
-import com.ning.http.client.Response
-
-import HttpStatusCheckBuilder.findExtractorFactory
+import com.excilys.ebi.gatling.http.response.ExtendedResponse
 
 /**
- * HttpStatusCheckBuilder class companion
- *
- * It contains DSL definitions
+ * Builder for HTTP status check
  */
 object HttpStatusCheckBuilder {
 
-	def status = new HttpStatusCheckBuilder
+	private val findExtractorFactory: ExtractorFactory[ExtendedResponse, String, Int] = (response: ExtendedResponse) => (unused: String) => Some(response.getStatusCode)
 
-	private def findExtractorFactory: ExtractorFactory[Response, String, Int] = (response: Response) => (expression: String) => Some(response.getStatusCode)
-}
-
-/**
- * This class builds a response status check
- */
-class HttpStatusCheckBuilder extends HttpExtractorCheckBuilder[Int, String](Session => EMPTY, StatusReceived) {
-
-	def find = new MatcherCheckBuilder[HttpCheck[String], Response, String, Int](httpCheckBuilderFactory, findExtractorFactory)
+	val status = new HttpSingleCheckBuilder(findExtractorFactory, NOOP_EXPRESSION, StatusReceived)
 }
