@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>com.excilys.ebi.gatling</groupId>
+	<groupId>io.gatling</groupId>
 	<artifactId>gatling-parent</artifactId>
 	<version>2.0.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
@@ -111,45 +112,43 @@
 		<maven.compiler.source>1.6</maven.compiler.source>
 		<maven.compiler.target>1.6</maven.compiler.target>
 		<encoding>UTF-8</encoding>
-		<scala.version>2.9.2</scala.version>
-		<ahc.version>1.7.9</ahc.version>
-		<scalaz.version>7.0.0-M6</scalaz.version>
-		<akka.version>2.0.4</akka.version>
+		<scala.version>2.10.1</scala.version>
+		<ahc.version>1.7.12</ahc.version>
+		<akka.version>2.1.2</akka.version>
 		<config.version>1.0.0</config.version>
-		<jaxen.version>1.1.4</jaxen.version>
+		<jaxen.version>1.1.6</jaxen.version>
 		<xerces.version>2.11.0</xerces.version>
-		<xml-apis.version>1.4.01</xml-apis.version>
-		<logback.version>1.0.9</logback.version>
-		<slf4j.version>1.7.2</slf4j.version>
-		<scalate.version>1.5.3</scalate.version>
-		<netty.version>3.6.0.Final</netty.version>
-		<grizzly.version>2.2.16</grizzly.version>
-		<joda-time.version>2.1</joda-time.version>
+		<logback.version>1.0.11</logback.version>
+		<slf4j.version>1.7.5</slf4j.version>
+		<scalate.version>1.6.1</scalate.version>
+		<fastring.version>0.2.1</fastring.version>
+		<netty.version>3.6.4.Final</netty.version>
+		<joda-time.version>2.2</joda-time.version>
 		<joda-convert.version>1.2</joda-convert.version>
-		<xstream.version>1.4.3</xstream.version>
 		<scopt.version>2.1.0</scopt.version>
-		<ant.version>1.8.3</ant.version>
-		<grizzled-slf4j.version>0.6.10</grizzled-slf4j.version>
-		<jackson.version>2.1.2</jackson.version>
-		<commons-math3.version>3.0</commons-math3.version>
+		<scalalogging.version>1.0.1</scalalogging.version>
+		<jackson.version>2.1.4</jackson.version>
+		<commons-math3.version>3.1.1</commons-math3.version>
 		<commons-io.version>2.4</commons-io.version>
 		<commons-exec.version>1.1</commons-exec.version>
-		<jodd.version>3.4.0</jodd.version>
-		<redis.version>2.8</redis.version>
+		<jodd.version>3.4.2</jodd.version>
+		<jzlib.version>1.1.2</jzlib.version>
+		<redis.version>2.10</redis.version>
 		<junit.version>4.11</junit.version>
-		<specs2.version>1.12.3</specs2.version>
-		<zinc.version>0.2.0</zinc.version>
+		<specs2.version>1.14</specs2.version>
+		<zinc.version>0.3.0-M1</zinc.version>
+		<plexus-selector.version>1.0.0</plexus-selector.version>
 		<maven2.version>2.2.1</maven2.version>
 		<maven-compiler-plugin.version>3.0</maven-compiler-plugin.version>
 		<maven-source-plugin.version>2.2</maven-source-plugin.version>
 		<maven-assembly-plugin.version>2.2.2</maven-assembly-plugin.version>
 		<maven-jar-plugin.version>2.4</maven-jar-plugin.version>
-		<scala-maven-plugin.version>3.1.0</scala-maven-plugin.version>
+		<scala-maven-plugin.version>3.1.3</scala-maven-plugin.version>
 		<maven-surefire-plugin.version>2.12.4</maven-surefire-plugin.version>
 		<maven-release-plugin.version>2.3.2</maven-release-plugin.version>
 		<maven-license-plugin.version>1.10.b1</maven-license-plugin.version>
-		<maven-plugin-plugin.version>2.9</maven-plugin-plugin.version>
-		<build-helper-maven-plugin.version>1.7</build-helper-maven-plugin.version>
+		<maven-plugin-plugin.version>3.2</maven-plugin-plugin.version>
+		<maven-enforcer-plugin.version>1.2</maven-enforcer-plugin.version>
 
 		<header.basedir>${project.basedir}</header.basedir>
 	</properties>
@@ -157,52 +156,52 @@
 	<dependencyManagement>
 		<dependencies>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-core</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-http</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-jdbc</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-redis</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-app</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-charts</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-recorder</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-bundle</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-maven-plugin</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.excilys.ebi.gatling</groupId>
+				<groupId>io.gatling</groupId>
 				<artifactId>gatling-metrics</artifactId>
 				<version>${project.version}</version>
 			</dependency>
@@ -217,9 +216,9 @@
 				<version>${scala.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>org.scalaz</groupId>
-				<artifactId>scalaz-core_2.9.2</artifactId>
-				<version>${scalaz.version}</version>
+				<groupId>org.scala-lang</groupId>
+				<artifactId>scala-reflect</artifactId>
+				<version>${scala.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.ning</groupId>
@@ -232,13 +231,8 @@
 				<version>${netty.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>org.glassfish.grizzly</groupId>
-				<artifactId>grizzly-websockets</artifactId>
-				<version>${grizzly.version}</version>
-			</dependency>
-			<dependency>
 				<groupId>com.typesafe.akka</groupId>
-				<artifactId>akka-actor</artifactId>
+				<artifactId>akka-actor_2.10</artifactId>
 				<version>${akka.version}</version>
 			</dependency>
 			<dependency>
@@ -251,8 +245,8 @@
 				<artifactId>jaxen</artifactId>
 				<version>${jaxen.version}</version>
 				<exclusions>
-				<exclusion>
-					<groupId>maven-plugins</groupId>
+					<exclusion>
+						<groupId>maven-plugins</groupId>
 						<artifactId>maven-cobertura-plugin</artifactId>
 					</exclusion>
 					<exclusion>
@@ -267,11 +261,6 @@
 				<version>${xerces.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>xml-apis</groupId>
-				<artifactId>xml-apis</artifactId>
-				<version>${xml-apis.version}</version>
-			</dependency>
-			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-classic</artifactId>
 				<version>${logback.version}</version>
@@ -283,8 +272,13 @@
 			</dependency>
 			<dependency>
 				<groupId>org.fusesource.scalate</groupId>
-				<artifactId>scalate-core</artifactId>
+				<artifactId>scalate-core_2.10</artifactId>
 				<version>${scalate.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.dongxiguo</groupId>
+				<artifactId>fastring_2.10</artifactId>
+				<version>${fastring.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>joda-time</groupId>
@@ -297,34 +291,14 @@
 				<version>${joda-convert.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>com.thoughtworks.xstream</groupId>
-				<artifactId>xstream</artifactId>
-				<version>${xstream.version}</version>
-				<exclusions>
-					<exclusion>
-						<artifactId>xpp3_min</artifactId>
-						<groupId>xpp3</groupId>
-					</exclusion>
-					<exclusion>
-						<artifactId>xmlpull</artifactId>
-						<groupId>xmlpull</groupId>
-					</exclusion>
-				</exclusions>
-			</dependency>
-			<dependency>
 				<groupId>com.github.scopt</groupId>
-				<artifactId>scopt_2.9.2</artifactId>
+				<artifactId>scopt_2.10</artifactId>
 				<version>${scopt.version}</version>
 			</dependency>
 			<dependency>
-				<groupId>org.apache.ant</groupId>
-				<artifactId>ant</artifactId>
-				<version>${ant.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.clapper</groupId>
-				<artifactId>grizzled-slf4j_2.9.2</artifactId>
-				<version>${grizzled-slf4j.version}</version>
+				<groupId>com.typesafe</groupId>
+				<artifactId>scalalogging-slf4j_2.10</artifactId>
+				<version>${scalalogging.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.maven</groupId>
@@ -343,17 +317,7 @@
 			</dependency>
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
-				<artifactId>jackson-core</artifactId>
-				<version>${jackson.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>com.fasterxml.jackson.core</groupId>
 				<artifactId>jackson-databind</artifactId>
-				<version>${jackson.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>com.fasterxml.jackson.core</groupId>
-				<artifactId>jackson-annotations</artifactId>
 				<version>${jackson.version}</version>
 			</dependency>
 			<dependency>
@@ -367,6 +331,11 @@
 				<version>${jodd.version}</version>
 			</dependency>
 			<dependency>
+				<groupId>com.jcraft</groupId>
+				<artifactId>jzlib</artifactId>
+				<version>${jzlib.version}</version>
+			</dependency>
+			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
 				<version>${commons-io.version}</version>
@@ -378,8 +347,14 @@
 			</dependency>
 			<dependency>
 				<groupId>net.debasishg</groupId>
-				<artifactId>redisclient_2.9.2</artifactId>
+				<artifactId>redisclient_2.10</artifactId>
 				<version>${redis.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>org.scala-lang</groupId>
+						<artifactId>scala-actors</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<dependency>
 				<groupId>junit</groupId>
@@ -388,7 +363,7 @@
 			</dependency>
 			<dependency>
 				<groupId>org.specs2</groupId>
-				<artifactId>specs2_2.9.2</artifactId>
+				<artifactId>specs2_2.10</artifactId>
 				<version>${specs2.version}</version>
 			</dependency>
 			<dependency>
@@ -397,17 +372,24 @@
 				<version>${zinc.version}</version>
 				<exclusions>
 					<exclusion>
-						<groupId>org.ensime</groupId>
-						<artifactId>ensime-sbt-cmd</artifactId>
-					</exclusion>
-					<exclusion>
 						<groupId>com.typesafe.sbt</groupId>
 						<artifactId>sbt-interface</artifactId>
 					</exclusion>
 				</exclusions>
 			</dependency>
+			<dependency>
+				<groupId>com.excilys.ebi</groupId>
+				<artifactId>plexus-selector</artifactId>
+				<version>${plexus-selector.version}</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
+	<dependencies>
+		<dependency>
+			<groupId>org.scala-lang</groupId>
+			<artifactId>scala-library</artifactId>
+		</dependency>
+	</dependencies>
 
 	<build>
 		<pluginManagement>
@@ -437,11 +419,6 @@
 					<version>${maven-jar-plugin.version}</version>
 				</plugin>
 				<plugin>
-					<groupId>org.fusesource.scalate</groupId>
-					<artifactId>maven-scalate-plugin</artifactId>
-					<version>${scalate.version}</version>
-				</plugin>
-				<plugin>
 					<groupId>net.alchim31.maven</groupId>
 					<artifactId>scala-maven-plugin</artifactId>
 					<version>${scala-maven-plugin.version}</version>
@@ -452,6 +429,18 @@
 								<goal>compile</goal>
 								<goal>testCompile</goal>
 							</goals>
+							<configuration>
+								<args>
+									<arg>-encoding</arg>
+									<arg>UTF-8</arg>
+									<arg>-target:jvm-1.6</arg>
+									<arg>-deprecation</arg>
+									<arg>-feature</arg>
+									<arg>-unchecked</arg>
+									<arg>-language:implicitConversions</arg>
+									<arg>-language:postfixOps</arg>
+								</args>
+							</configuration>
 						</execution>
 					</executions>
 				</plugin>
@@ -479,10 +468,18 @@
 					<version>${maven-license-plugin.version}</version>
 					<configuration>
 						<header>${header.basedir}/src/etc/header.txt</header>
-						<strictCheck>false</strictCheck>
+						<strictCheck>true</strictCheck>
 						<excludes>
+							<exclude>src/test/resources/*.*</exclude>
 							<exclude>**/jquery.min.js</exclude>
 							<exclude>**/bootstrap.min.*</exclude>
+							<exclude>**/*.ssp</exclude>
+							<exclude>**/.cache</exclude>
+							<exclude>**/.keep</exclude>
+							<exclude>**/*.conf</exclude>
+							<exclude>**/LICENSE</exclude>
+							<exclude>**/*.md</exclude>
+							<exclude>.gitignore</exclude>
 						</excludes>
 					</configuration>
 					<executions>
@@ -494,7 +491,7 @@
 						</execution>
 					</executions>
 				</plugin>
-				<!--This plugin's configuration is used to store Eclipse m2e settings
+				<!--This plugin's configuration is used to store Eclipse m2e settings 
 					only. It has no influence on the Maven build itself. -->
 				<plugin>
 					<groupId>org.eclipse.m2e</groupId>
@@ -516,22 +513,52 @@
 										<ignore />
 									</action>
 								</pluginExecution>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.apache.maven.plugins</groupId>
+										<artifactId>maven-enforcer-plugin</artifactId>
+										<versionRange>[1.0.0,)</versionRange>
+										<goals>
+											<goal>enforce</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore />
+									</action>
+								</pluginExecution>
 							</pluginExecutions>
 						</lifecycleMappingMetadata>
 					</configuration>
 				</plugin>
 				<plugin>
-					<groupId>org.codehaus.mojo</groupId>
-					<artifactId>build-helper-maven-plugin</artifactId>
-					<version>${build-helper-maven-plugin.version}</version>
-				</plugin>
-				<plugin>
 					<artifactId>maven-plugin-plugin</artifactId>
 					<version>${maven-plugin-plugin.version}</version>
+				</plugin>
+				<plugin>
+					<artifactId>maven-enforcer-plugin</artifactId>
+					<version>${maven-enforcer-plugin.version}</version>
+					<executions>
+						<execution>
+							<id>enforce-versions</id>
+							<goals>
+								<goal>enforce</goal>
+							</goals>
+							<configuration>
+								<rules>
+									<requireJavaVersion>
+										<version>1.7</version>
+									</requireJavaVersion>
+								</rules>
+							</configuration>
+						</execution>
+					</executions>
 				</plugin>
 			</plugins>
 		</pluginManagement>
 		<plugins>
+			<plugin>
+				<artifactId>maven-enforcer-plugin</artifactId>
+			</plugin>
 			<plugin>
 				<artifactId>maven-source-plugin</artifactId>
 			</plugin>

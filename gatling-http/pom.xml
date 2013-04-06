@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<artifactId>gatling-parent</artifactId>
-		<groupId>com.excilys.ebi.gatling</groupId>
+		<groupId>io.gatling</groupId>
 		<version>2.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>gatling-http</artifactId>
@@ -17,7 +18,7 @@
 	<dependencies>
 		<!-- compile -->
 		<dependency>
-			<groupId>com.excilys.ebi.gatling</groupId>
+			<groupId>io.gatling</groupId>
 			<artifactId>gatling-core</artifactId>
 		</dependency>
 		<dependency>
@@ -26,7 +27,11 @@
 		</dependency>
 		<dependency>
 			<groupId>org.fusesource.scalate</groupId>
-			<artifactId>scalate-core</artifactId>
+			<artifactId>scalate-core_2.10</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.jcraft</groupId>
+			<artifactId>jzlib</artifactId>
 		</dependency>
 
 		<!-- test -->
@@ -37,7 +42,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.specs2</groupId>
-			<artifactId>specs2_2.9.2</artifactId>
+			<artifactId>specs2_2.10</artifactId>
 			<scope>test</scope>
 		</dependency>
 
@@ -45,11 +50,6 @@
 		<dependency>
 			<groupId>io.netty</groupId>
 			<artifactId>netty</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.glassfish.grizzly</groupId>
-			<artifactId>grizzly-websockets</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 	</dependencies>

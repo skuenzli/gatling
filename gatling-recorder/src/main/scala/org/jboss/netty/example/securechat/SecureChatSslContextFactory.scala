@@ -17,7 +17,7 @@ package org.jboss.netty.example.securechat
 
 import java.security.{ KeyStore, Security }
 
-import com.excilys.ebi.gatling.core.util.IOHelper
+import io.gatling.core.util.IOHelper.withCloseable
 
 import javax.net.ssl.{ KeyManagerFactory, SSLContext }
 
@@ -54,13 +54,13 @@ import javax.net.ssl.{ KeyManagerFactory, SSLContext }
  */
 object SecureChatSslContextFactory {
 
-	val (serverContext, clientContext): (SSLContext, SSLContext) = {
+	val PROTOCOL = "TLS"
 
-		val PROTOCOL = "TLS"
+	val serverContext: SSLContext = {
 		val algorithm = Option(Security.getProperty("ssl.KeyManagerFactory.algorithm")).getOrElse("SunX509")
 		val ks = KeyStore.getInstance("JKS")
 
-		IOHelper.use(ClassLoader.getSystemResourceAsStream("gatling.jks")) { in =>
+		withCloseable(ClassLoader.getSystemResourceAsStream("gatling.jks")) { in =>
 			val gatlingChars = "gatling".toCharArray
 			ks.load(in, gatlingChars)
 
@@ -72,10 +72,13 @@ object SecureChatSslContextFactory {
 			val serverContext = SSLContext.getInstance(PROTOCOL)
 			serverContext.init(kmf.getKeyManagers, null, null)
 
-			val clientContext = SSLContext.getInstance(PROTOCOL)
-			clientContext.init(null, SecureChatTrustManagerFactory.getTrustManagers, null)
-
-			(serverContext, clientContext)
+			serverContext
 		}
+	}
+
+	val clientContext: SSLContext = {
+		val clientContext = SSLContext.getInstance(PROTOCOL)
+		clientContext.init(null, SecureChatTrustManagerFactory.trustManagers, null)
+		clientContext
 	}
 }
